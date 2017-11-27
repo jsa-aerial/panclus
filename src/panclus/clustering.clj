@@ -96,30 +96,6 @@
 
 
 
-(defn load-sqs []
-  (let [base "/store/data/PanClus/RefSeq77"
-        pg30base "/store/data/PanClus/PG/PG30"
-        pg320base "/store/data/PanClus/PG/PG320"]
-
-    {:refsqs
-     (let [name-seq-pairs
-           (bufiles/read-seqs
-            (fs/join base "AllRefSP-refseq77.fna") :info :both)]
-       (sort-by second (fn[l r] (< (count l) (count r))) name-seq-pairs))}
-
-    :pg30sqs
-    (let [name-seq-pairs
-          (bufiles/read-seqs
-           (fs/join pg30base "AllPG30-tvo02.fna") :info :both)]
-      (sort-by second (fn[l r] (< (count l) (count r))) name-seq-pairs))
-
-    :pg320sqs
-    (let [name-seq-pairs
-          (bufiles/read-seqs
-           (fs/join pg320base "AllPG320-tvo02.fna") :info :both)]
-      (sort-by second (fn[l r] (< (count l) (count r))) name-seq-pairs))))
-
-
 (defn ntseq2aaseq [s]
   (let [[_ r] (m/div (count s) 3)
         s (if (= 0 r) s (str/butlast r s))]
