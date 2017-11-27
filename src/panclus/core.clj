@@ -30,7 +30,7 @@
   [["-r" "--repl-port PORT" "Port for nrepl server"
     :default nil
     :parse-fn #(Integer/parseInt %)
-    :validate [#(< 4000 % 5000) "Must be a number between 0 and 65536"]]
+    :validate [#(< 4000 % 5000) "Must be a number between 4001 and 4999"]]
    ;; A boolean option defaulting to nil
    ["-h" "--help" "Print this help"
     :default true]])
