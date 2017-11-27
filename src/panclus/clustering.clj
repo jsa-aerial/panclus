@@ -23,7 +23,7 @@
 
 
 
-(def spsbase (pams/get-params :spsbase))
+(def panclus-base (pams/get-params :panclus-base))
 
 ;;; Separate out the strains and aggregate the annotations per strain
 ;;; from original db querys
@@ -34,7 +34,7 @@
                      "32" "gene", "47" "old_locus_tag"}
           tags ["gene" "old_locus_tag" "locus_tag" "protein_id"]
           cols (coll/concatv ["ACCEN" "Start" "End" "Strand"] tags)
-          strainbase (fs/join spsbase strain-dir)
+          strainbase (fs/join panclus-base strain-dir)
           dbcsv (fs/join strainbase orig-db-csv)
           lines (io/read-lines dbcsv)
           strains (group-by first (mapv #(-> % csv/read-csv first) lines))
@@ -56,7 +56,7 @@
 ;;; Generate fastas from above generated CSVs
 ;;; (future  (gen-strain-fastas "PG/PG320"))
 (defn gen-strain-fastas [strain-dir]
-  (let [base spsbase
+  (let [base panclus-base
         strainbase (fs/join base strain-dir)
         tags ["gene" "old_locus_tag" "locus_tag" "protein_id"]
         csvs (fs/re-directory-files (fs/join strainbase "CSV") "*.csv")
@@ -83,10 +83,10 @@
 
 (def pgfnas
   (let [nmfn #(-> % fs/basename (fs/replace-type ""))
-        pg30fnas  (->> (fs/directory-files (fs/join spsbase "PG/PG30") "fna")
+        pg30fnas  (->> (fs/glob (fs/join panclus-base "PG/PG30/T*.fna"))
                        sort vec)
-        pg320fnas (->> (fs/directory-files (fs/join spsbase "PG/PG320") "fna")
-                      sort vec)]
+        pg320fnas (->> (fs/glob (fs/join panclus-base "PG/PG320/T*.fna"))
+                       sort vec)]
     {:pg30 pg30fnas
      :pg320 pg320fnas}))
 
