@@ -82,17 +82,22 @@
 
 
 (def pgfnas
-  (let [nmfn #(-> % fs/basename (fs/replace-type ""))
-        pg30fnas  (->> (fs/glob (fs/join panclus-base "PG/PG30/T*.fna"))
+  (let [pg30fnas  (->> (fs/glob (fs/join panclus-base "PG/PG30/T*.fna"))
                        sort vec)
         pg320fnas (->> (fs/glob (fs/join panclus-base "PG/PG320/T*.fna"))
                        sort vec)]
     {:pg30 pg30fnas
      :pg320 pg320fnas}))
 
+(def reffnas
+  (->> (fs/glob (fs/join panclus-base "RefSeq77/N*.fna"))
+       sort vec))
+
 (def strains
   (let [nmfn #(-> % fs/basename (fs/replace-type ""))]
-    {:pg30 (mapv nmfn (:pg30 pgfnas)) :pg320 (mapv nmfn (:pg320 pgfnas))}))
+    {:ref77 (mapv nmfn reffnas)
+     :pg30 (mapv nmfn (:pg30 pgfnas))
+     :pg320 (mapv nmfn (:pg320 pgfnas))}))
 
 
 
@@ -110,18 +115,23 @@
   'aa' is boolean for whether should use ammino acid (convert first)"
   [sqs & {:keys [aa ows] :or {aa false ows 9}}]
   (vfold (fn[[n s]]
-           (let [s (if aa (ntseq2aaseq s) s)])
-           [n (count s) (p/probs ows s)])
+           (let [s (if aa (ntseq2aaseq s) s)
+                 [ent & x] (->> n (str/split #","))
+                 lt (->> x (coll/partitionv-all 2) (into {})
+                         (#(% "locus_tag")))
+                 n (str ent "," lt)]
+             [n (count s) (p/probs ows s)]))
          sqs))
 
 (defn gen-strain-dists
   "Take a fasta file 'strain-fna', which contains the CDS/genes (as NT
   sqs) for one or more strains and produce a set of corresponding
   probability distributions for each CDS/gene using 'ows' kmer
-  size. If 'aa' is true, first convert to ammino acid
-  sequences. Returns a vector of triplets [ent len dist], one for each
-  CDS/gene, where 'ent' is the entry defining the loci, 'len' is the
-  length of the sq, and 'dist' is the probability distribution."
+  size. If 'aa' is true, first convert to ammino acid sequences.
+
+  Returns a vector of triplets [ent len dist], one for each CDS/gene,
+  where 'ent' is the entry defining the loci, 'len' is the length of
+  the sq, and 'dist' is the probability distribution."
   [strain-fna & {:keys [aa ows] :or {aa false ows 9}}]
   (let [name-seq-pairs (bufiles/read-seqs strain-fna :info :both)]
     (gen-sqs-dists
@@ -136,30 +146,32 @@
   (mapv #(gen-strain-dists % :ows ows :aa aa) strain-fnas))
 
 
+(defn gen-len-dists-map
+  "Take a dists set (vector of triples [ent len dist] as obtained by
+  gen-strain-dists) and returns a map grouping these by 'len'"
+  [dists]
+  (reduce (fn[S [n cnt P :as v]]
+            (assoc S cnt (conj (get S cnt []) v)))
+          {} dists))
+
+(defn gen-nm-dists-map
+  "Take a dists set (vector of triples [ent len dist] as obtained by
+  gen-strain-dists) and returns a map grouping these by 'ent'"
+  [dists]
+  (reduce (fn[M [n cnt P :as v]] (assoc M n v)) {} dists))
+
+
 (comment
-  (def sqs-map (load-sqs))
 
-  (def ref-dists-all
-    (vfold (fn[[n s]] [n (count s) (p/probs (ows :nt) s)])
-           (sqs-map :refsqs)))
+  (def ref-dists-all (gen-strain-group-dists reffnas :ows 6))
+  (def maxNCdists (first ref-dists-all))
+  (def ref-dists (rest ref-dists-all))
+  (def refdists-map (gen-nm-dists-map ref-dists))
+  (def ref-len-dists-map (gen-len-dists-map ref-dists))
 
-  (def maxNCdists
-    (filterv (fn[[n cnt P]]
-               (= "NC_014498" (str/substring n 0 9)))
-             ref-dists-all))
-  (def ref-dists
-    (filterv (fn[[n cnt P]]
-               (not= "NC_014498" (str/substring n 0 9)))
-             ref-dists-all))
-  (def refdists-map
-    (reduce (fn[M [n cnt P :as v]] (assoc M n v)) {} ref-dists))
-
-  (def ref-len-dists-map
-    (reduce (fn[S [n cnt P :as rec]]
-              (assoc S cnt (conj (get S cnt []) rec)))
-            {} ref-dists))
   (io/with-out-writer "/store/data/PanClus/Entropy/ref-len-dists-map.clj"
     (prn ref-len-dists-map))
+
 
 
   (let [base "/store/data/PanClus/Entropy"
@@ -197,18 +209,6 @@
 
 
 
-(def ref-len-dists-map
-  (->>  "/store/data/PanClus/Entropy/ref-len-dists-map.clj"
-        slurp read-string))
-(def maxNCdists
-  (->> "/store/data/PanClus/Entropy/maxNCdists.clj"
-       slurp read-string))
-
-
-
-
-
-
 (defn opt-wz [name-seq-pairs &
               {:keys [limit cnt crecut alpha]
                :or {limit 14 cnt 5 crecut 0.10}}]
@@ -223,14 +223,7 @@
                    0.0 cres)]
     [(Math/round wz) cres]))
 
-#_(filterv (fn[[n cnt Q]]
-             (if (< mean-std pcnt mean+std)
-               (< (Math/abs (- pcnt cnt)) len-max)
-               (>= (-> (- 1 (/ (Math/abs (- pcnt cnt))
-                               (double (max pcnt cnt))))
-                       (* 10.0) Math/round (/ 10.0))
-                   %-max)))
-           (vals distmap))
+
 (defn ld-map-mean [ld-map]
   (->> ld-map
      (reduce (fn[[n d] [k v]]
@@ -239,19 +232,22 @@
      (apply /)))
 
 (defn cluster-strains
-  [dists distmap maxNCdists ref-len-dists-map
+  [dists center-dists
    & {:keys [len-max %-max jsdctpt] :or {len-max 5 %-max 0.99 jsdctpt 0.40}}]
 
-  (let [mean (p/mean (map second dists))
+  (let [ref-len-dists-map (gen-len-dists-map dists)
+        mean (p/mean (map second dists))
         std  (p/std-deviation (map second dists))
         mean-std (long (- mean std))
         mean+std (long (+ mean std 7))]
-    (loop [;;distmap distmap
-           maxNCdists maxNCdists
+    (loop [center-dists center-dists
            clus []]
-      (if (empty? maxNCdists)
+      (if (empty? center-dists)
         clus
-        (let [[n1 pcnt P] (first maxNCdists)
+        (let [[n1 pcnt P] (first center-dists)
+              ;; Adjust distribution set to use for this clu (P
+              ;; 'centered') by length - Only for optimization - not
+              ;; actually needed for RE
               ds (if (< mean-std pcnt mean+std)
                    (->> (range (- pcnt len-max -1)
                                (+ pcnt len-max))
@@ -259,19 +255,17 @@
                    (->> (range (-> pcnt (* 0.99) Math/round)
                                (-> pcnt (* 1.01) Math/round))
                         (mapcat ref-len-dists-map)))
-              ;;_ (println :ds-cnt (count ds))
+              ;; Gen cluster for center P
               clu (coll/takev-while
                    #(-> % second (< jsdctpt))
                    (sort-by
                     second (vfold (fn[[n cnt Q]]
                                     [n (it/jensen-shannon P Q)])
                                   ds)))
-              ;;_ (println :clu-cnt (count clu))
-              ;;newdists (apply dissoc distmap (mapv first clu))
-              ;;_ (println :newdist-cnt (count newdists))
+              ;; Add the center element to the cluster
               clu (conj clu [n1 pcnt 0.0])]
           (recur #_newdists
-                 (rest maxNCdists)
+                 (rest center-dists)
                  (conj clus clu)))))))
 
 (defn make-hybrids
@@ -330,8 +324,7 @@
 
 
 (def ref-clusters-040
-  (time (cluster-strains ref-dists refdists-map
-                         maxNCdists ref-len-dists-map :jsdctpt 0.40)))
+  (time (cluster-strains ref-dists maxNCdists :jsdctpt 0.40)))
 (def all-matched-040
   (->> ref-clusters-040 (mapcat (fn[clu](->> clu butlast (map first))))))
 (io/with-out-writer
@@ -478,8 +471,8 @@
      (sort >) (take-while #(> % 0.45)) count)
 
 
-(cluster-strains ref-dists refdists-map (take 5 (coll/dropv 1000 maxNCdists)))
-(cluster-strains ref-dists refdists-map (take 5 (coll/dropv 2000 maxNCdists)))
+(cluster-strains ref-dists (take 5 (coll/dropv 1000 maxNCdists)))
+(cluster-strains ref-dists (take 5 (coll/dropv 2000 maxNCdists)))
 
 
 (def size-dist
@@ -515,4 +508,4 @@
 (map count (map last (map refdists-map (map first (rest jsadists)))))
 (195 195 195 195 195 195 195 195 195 195 195 195 194)
 
-(cluster-strains ref-dists refdists-map [hybdist])
+(cluster-strains ref-dists [hybdist])
