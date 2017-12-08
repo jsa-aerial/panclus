@@ -392,25 +392,18 @@
                   (gen-nm-dists-map start-dists)
                   matched))))
 
-(defn merge-leftovers-into-clusters
+(defn merge-clusters
   "Effectively 'leftovers' do not cluster and so are the
   start (centers) of new clusters. Clusters is the current collection
   of clusters - each a map with keys [center, members, name]. Convert
   each tuple [n cnt dist] in leftovers to such a map and add the
   result to 'clusters'. Returns new cluster coll"
   [clusters leftovers]
-  (coll/concatv (mapv (fn[m]
-                        (let [center (m :center)
-                              [n jsd cnt dist] center]
-                          (assoc m :center [n cnt dist])))
-                      clusters)
-                (mapv (fn[[n cnt dist]]
-                        (let [i @PGSP-index]
-                          (swap! PGSP-index inc)
-                          {:center [n cnt dist]
-                           :members #{n}
-                           :name (format "PGSP_%05d" i)}))
-                      leftovers)))
+  (mapv (fn[m]
+            (let [center (m :center)
+                  [n jsd cnt dist] center]
+              (assoc m :center [n cnt dist])))
+        (coll/concatv clusters leftovers)))
 
 
 (defn run-clustering-pipe
@@ -433,6 +426,16 @@
           nextclus
           (recur nextclus, cur-leftcnt))))))
 
+(defn cluster-and-coalesce
+  [leftover-dists jsdctpt]
+  (println "Cluster/coalesce ...")
+  (let [initial-clus (cluster-leftovers leftover-dists :jsdctpt jsdctpt)
+        non-singletons (filter #(> (count (% :members)) 1) leftover-clus)
+        hybrid-clus (make-hybrids non-singletons)]
+    ;; rerun clustering using information centroids over original
+    ;; dists to generate final clustering.
+    (run-clustering-pipe [leftover-dists] hybrid-clus)))
+
 ;;; (map (fn[tuple]
 ;;;        {:center tuple :members #{} :name (first tuple)})
 ;;;      (gen-strain-group-dists [start-center-fna] :ows ows))
@@ -454,13 +457,9 @@
                               :diffcut diffcut :jsdctpt jsdctpt)
               leftover-dists (leftovers-from-clustering
                               chunk-clusters (apply concat chunk-dists))
-              leftover-clus (cluster-leftovers
-                             leftover-dists :jsdctpt jsdctpt)
-              leftover-hybs (make-hybrids
-                             (filter #(> (count (% :members)) 1) leftover-clus))
-              _ (println "After leftover-hybs")
-              clusters (merge-leftovers-into-clusters
-                        chunk-clusters leftover-dists)]
+              leftover-clus (cluster-and-coalesce
+                             leftover-dists jsdctpt)
+              clusters (merge-clusters chunk-clusters leftover-clus)]
           (println "At recur point")
           (recur (drop chunk-size strain-fnas)
                  clusters))))))
