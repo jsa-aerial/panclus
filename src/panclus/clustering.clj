@@ -160,11 +160,18 @@
   [dists]
   (reduce (fn[M [n cnt P :as v]] (assoc M n v)) {} dists))
 
+(defn fna2center-start [strain-fna]
+  (map (fn[tuple]
+         {:center tuple :members #{} :name (first tuple)})
+       (first (gen-strain-group-dists [strain-fna] :ows 6))))
+
 
 (comment
 
   (def ref-dists-all (gen-strain-group-dists reffnas :ows 6))
-  (def maxNCdists (first ref-dists-all))
+  (def center-dists (map (fn[tuple]
+                           {:center tuple :members #{} :name (first tuple)})
+                         (first ref-dists-all)))
   (def ref-dists (rest ref-dists-all))
   (def refdists-map (gen-nm-dists-map ref-dists))
   (def ref-len-dists-map (gen-len-dists-map ref-dists))
@@ -175,7 +182,7 @@
 
 
   (let [base "/store/data/PanClus/Entropy"
-        data-nms [[maxNCdists "maxNCdists.clj"]
+        data-nms [[center-dists "center-dists.clj"]
                   [ref-dists "ref-dists.clj"]
                   [refdists-map "refdists-map.clj"]]]
     (doseq [[data nm] data-nms]
@@ -231,20 +238,30 @@
              [0.0 0.0])
      (apply /)))
 
+(def PGSP-index (atom 1))
+
+(defn hybrid-center? [center-name]
+  (= (str/take 4 center-name) "PGSP"))
+
 (defn cluster-strains
   [dists center-dists
    & {:keys [len-max %-max jsdctpt] :or {len-max 5 %-max 0.99 jsdctpt 0.40}}]
 
-  (let [ref-len-dists-map (gen-len-dists-map dists)
+  (let [dists (->> dists (apply concat))
+        ref-len-dists-map (gen-len-dists-map dists)
         mean (p/mean (map second dists))
         std  (p/std-deviation (map second dists))
         mean-std (long (- mean std))
         mean+std (long (+ mean std 7))]
     (loop [center-dists center-dists
+           i @PGSP-index
            clus []]
       (if (empty? center-dists)
         clus
-        (let [[n1 pcnt P] (first center-dists)
+        (let [{:keys [center members name]} (first center-dists)
+              [n1 pcnt P] center
+              ;;_ (prn :n1 n1 :pcnt pcnt :means mean-std mean+std)
+              hybrid? (hybrid-center? name)
               ;; Adjust distribution set to use for this clu (P
               ;; 'centered') by length - Only for optimization - not
               ;; actually needed for RE
@@ -255,46 +272,44 @@
                    (->> (range (-> pcnt (* 0.99) Math/round)
                                (-> pcnt (* 1.01) Math/round))
                         (mapcat ref-len-dists-map)))
-              ;; Gen cluster for center P
-              clu (coll/takev-while
-                   #(-> % second (< jsdctpt))
-                   (sort-by
-                    second (vfold (fn[[n cnt Q]]
-                                    [n (it/jensen-shannon P Q)])
-                                  ds)))
-              ;; Add the center element to the cluster
-              clu (conj clu [n1 pcnt 0.0])]
-          (recur #_newdists
-                 (rest center-dists)
+              ;; Gen new info tuples including JSD score
+              scored-tuples (sort-by
+                             second
+                             (vfold (fn[[n cnt Q]]
+                                      [n (it/jensen-shannon P Q) cnt Q])
+                                    ds))
+              ;; Get new cluster memebers for center P
+              new-members (coll/takev-while
+                           #(-> % second (< jsdctpt))
+                           scored-tuples)
+              ;; Cluster for center P
+              clu {:center [n1 0.0 pcnt P]
+                   :members (into members new-members)
+                   :name (if hybrid? name (format "PGSP_%05d" i))}]
+          (recur (rest center-dists)
+                 (if hybrid? i (swap! PGSP-index inc))
                  (conj clus clu)))))))
 
-(defn make-hybrids
-  "Transform the clusters in 'clusters' obtained from distribution map
-  'distmap' into dist recs of form: [\"hybrid-dict-x\", cnt,
-  hybrid-dict] where 'cnt' is the mean seq lens in cluster x and
-  'hybrid-dict' is the minimum entropy derived hybrid dictionary /
-  distribution of all distributions in cluster x"
-  [clusters distmap & {:keys [wz] :or {wz 6}}]
-  (map
-   (fn[clu i]
-     (let [recs (->> clu (map first) (map distmap))
-           dists (mapv last recs)
-           cnt (long (p/mean (mapv second recs)))]
-       [(format "hbrid-dict-%s" (inc i)) cnt (it/hybrid-dictionary 6 dists)]))
-   clusters (range)))
-
 (defn cluster-leftovers
-  [distmap dists all-matched ref-len-dists-map
-   & {:keys [len-max %-max jsdctpt] :or {len-max 5 %-max 0.99 jsdctpt 0.40}}]
-  (let [distmap (reduce (fn[M k] (dissoc M k)) distmap all-matched)
-        ref-len-dists-map (reduce (fn[S [n cnt P :as rec]]
-                               (assoc S cnt (conj (get S cnt []) rec)))
-                             {} (vals distmap))
+  "After a cluster pipe cycling converges there may (most likely will)
+  be 'leftover points' that do not cluster with any of the clusters in
+  the final set. These, as the 'dists' parameter here, will be taken
+  and clustered among themselves. Centers are formed by walking
+  through the 'dists' set, and the remainging points are clustered to
+  each such center, and all in the resulting cluster are removed from
+  'dists'. The process repeats until there are no more points. Note,
+  this can stil result in singlets, which are new leftovers in the
+  clutrer pipe cycling."
+  [dists & {:keys [len-max %-max jsdctpt]
+            :or {len-max 5 %-max 0.99 jsdctpt 0.40}}]
+  (let [distmap (gen-nm-dists-map dists)
+        ref-len-dists-map (gen-len-dists-map (vals distmap))
         mean (p/mean (map second dists))
         std  (p/std-deviation (map second dists))
         mean-std (long (- mean std))
         mean+std (long (+ mean std 7))]
     (loop [distmap distmap
+           i @PGSP-index
            clus []]
       (if (empty? distmap)
         clus
@@ -307,29 +322,234 @@
                    (->> (range (-> pcnt (* 0.99) Math/round)
                                (-> pcnt (* 1.01) Math/round))
                         (mapcat ref-len-dists-map)))
-              ;;_ (println :ds-cnt (count ds))
-              clu (coll/takev-while
-                   #(-> % second (< jsdctpt))
-                   (sort-by
-                    second (vfold (fn[[n cnt Q]]
-                                    [n (it/jensen-shannon P Q)])
-                                  ds)))
-              newdists (apply dissoc distmap (mapv first clu))
-              ;;_ (println (count newdists))
-              clu (conj clu [n1 pcnt 0.0])]
-          (recur newdists
+              scored-tuples (sort-by
+                             second
+                             (vfold (fn[[n cnt Q]]
+                                      [n (it/jensen-shannon P Q) cnt Q])
+                                    ds))
+              new-members (coll/takev-while
+                           #(-> % second (< jsdctpt))
+                           scored-tuples)
+              clu {:center [n1 0.0 pcnt P]
+                   :members (set new-members)
+                   :name (format "PGSP_%05d" i)}
+              new-distmap (apply dissoc distmap (mapv first new-members))]
+          (recur new-distmap
+                 (swap! PGSP-index inc)
                  (conj clus clu)))))))
 
+(defn clean-clusters
+  "Cleans the 'members' field to only have 'ent,lt' names - no counts,
+  or distributions as they are not needed for cluster information."
+  [clusters]
+  (map (fn[clu]
+         (let [members (->> clu :members (mapv first) set)]
+           (assoc clu :members members)))
+       clusters))
+
+(defn make-hybrids
+  "Transform the clusters in 'clusters' obtained from distribution map
+  'distmap' into dist recs of form: [\"hybrid-dict-x\", cnt,
+  hybrid-dict] where 'cnt' is the mean seq lens in cluster x and
+  'hybrid-dict' is the minimum entropy derived hybrid dictionary /
+  distribution of all distributions in cluster x"
+  [clusters & {:keys [wz] :or {wz 6}}]
+  (mapv (fn[clu]
+         (let [{:keys [center members name]} clu
+               new-members (filter coll? members)
+               new+center (conj new-members center)
+               old-members (filter string? members)
+               dists (mapv last new+center)
+               cnt (->> new+center
+                        (mapv #(-> % rest second))
+                        p/mean long)]
+           {:center [name cnt (it/hybrid-dictionary wz dists)]
+            :members (into (set old-members) (mapv first new-members))
+            :name name}))
+       clusters))
+
+(defn- all-matched
+  "Collect the ID set of all loci (genes/CDS) currently a member of a
+  cluster. 'clusters' is a set of cluster elements, each of which has
+  fields [center, members, name]. The 'members' field contains the
+  loci of the cluster in either the (to be rolled into next hybrid
+  center) form [n len dist] or simply n."
+  [clusters]
+  (->> clusters (mapcat :members)
+       (map #(if (coll? %) (first %) %))))
+
+(defn leftovers-from-clustering
+  "Obtain the remaing unclustered members of 'start-dist' as those
+  that are not members of any cluster in 'clusters'. 'clusters' is the
+  result of cluster-strains with input 'start-dists'. Each member of
+  clusters is a map with keys [center members dist] and each member of
+  start-dists is standard tuple [n cnt dist]. Returns collection of
+  tuples in start-dists not in any cluster."
+  [clusters start-dists]
+  (let [matched (all-matched clusters)]
+    (vals (reduce (fn[M k]
+                    (dissoc M k))
+                  (gen-nm-dists-map start-dists)
+                  matched))))
+
+(defn merge-leftovers-into-clusters
+  "Effectively 'leftovers' do not cluster and so are the
+  start (centers) of new clusters. Clusters is the current collection
+  of clusters - each a map with keys [center, members, name]. Convert
+  each tuple [n cnt dist] in leftovers to such a map and add the
+  result to 'clusters'. Returns new cluster coll"
+  [clusters leftovers]
+  (coll/concatv (mapv (fn[m]
+                        (let [center (m :center)
+                              [n jsd cnt dist] center]
+                          (assoc m :center [n cnt dist])))
+                      clusters)
+                (mapv (fn[[n cnt dist]]
+                        (let [i @PGSP-index]
+                          (swap! PGSP-index inc)
+                          {:center [n cnt dist]
+                           :members #{n}
+                           :name (format "PGSP_%05d" i)}))
+                      leftovers)))
+
+
+(defn run-clustering-pipe
+  "For a single set of strain distribution records 'dists' using a
+  starting set of centroid distributions (cluster centers)
+  'center-dists, perform a complete cycling clustering."
+  [dists center-dists
+   & {:keys [len-max %-max jsdctpt diffcut]
+      :or {len-max 5 %-max 0.99 jsdctpt 0.40 diffcut 5}}]
+  (let [all-dists (apply concat dists)]
+    (loop [clusters (cluster-strains dists center-dists :jsdctpt jsdctpt)
+           leftcnt (count all-dists)]
+      #_(prn "         (first clusters)" (first clusters))
+      (let [hybrids (make-hybrids clusters)
+            leftovers (leftovers-from-clustering clusters all-dists)
+            cur-leftcnt (count leftovers)
+            nextclus (cluster-strains [leftovers] hybrids)]
+        (println :diff (- leftcnt cur-leftcnt))
+        (if (< (- leftcnt cur-leftcnt) diffcut)
+          nextclus
+          (recur nextclus, cur-leftcnt))))))
+
+;;; (map (fn[tuple]
+;;;        {:center tuple :members #{} :name (first tuple)})
+;;;      (gen-strain-group-dists [start-center-fna] :ows ows))
+(defn run-strain-clustering
+  ""
+  [strain-fnas center-start
+   & {:keys [len-max %-max jsdctpt diffcut chunk-size]
+      :or {len-max 5 %-max 0.99 jsdctpt 0.40 diffcut 5 chunk-size 10}}]
+  (let [alpha :aa
+        ows (ows alpha)]
+    (loop [strain-fnas strain-fnas
+           clusters center-start]
+      (if (empty? strain-fnas)
+        clusters
+        (let [chunk-fnas (take chunk-size strain-fnas)
+              chunk-dists (gen-strain-group-dists chunk-fnas :ows ows)
+              chunk-clusters (run-clustering-pipe
+                              chunk-dists clusters
+                              :diffcut diffcut :jsdctpt jsdctpt)
+              leftover-dists (leftovers-from-clustering
+                              chunk-clusters (apply concat chunk-dists))
+              leftover-clus (cluster-leftovers
+                             leftover-dists :jsdctpt jsdctpt)
+              leftover-hybs (make-hybrids
+                             (filter #(> (count (% :members)) 1) leftover-clus))
+              _ (println "After leftover-hybs")
+              clusters (merge-leftovers-into-clusters
+                        chunk-clusters leftover-dists)]
+          (println "At recur point")
+          (recur (drop chunk-size strain-fnas)
+                 clusters))))))
 
 
 
-(def ref-clusters-040
-  (time (cluster-strains ref-dists maxNCdists :jsdctpt 0.40)))
-(def all-matched-040
-  (->> ref-clusters-040 (mapcat (fn[clu](->> clu butlast (map first))))))
+(comment
+
+(def ref77-SP-clusters
+  (time (run-strain-clustering
+         (rest reffnas) (fna2center-start (first reffnas))
+         :jsdctpt 0.6 :chunk-size 20)))
+
+(def ref77+PG30-SP-clusters
+  (time (run-strain-clustering
+         (pgfnas :pg30) ref77-SP-clusters
+         :jsdctpt 0.6 :chunk-size 30)))
+
+(def ref77+PG30-SP-clusters
+  (time (run-strain-clustering
+         (concat (rest reffnas) (pgfnas :pg30))
+         (fna2center-start (first reffnas))
+         :jsdctpt 0.6 :chunk-size 50)))
+(def ref77+PG30-SP-clusters
+  (->> ref77+PG30-SP-clusters (filter #(> (count (% :members)) 1))))
+
+
+(def leftovers-ref77pg30
+  (->> ref77+PG30-SP-clusters (filter #(= (count (% :members)) 1))
+       (map (fn[m] (let [[nm jsd cnt dist] (m :center)
+                        n (first (m :members))
+                        [cnt dist] (if dist [cnt dist] [jsd cnt])]
+                    [n cnt dist])))))
+
+(def leftover-clus-ref77+pg30
+  (cluster-leftovers leftovers-ref77pg30 :jsdctpt 0.6))
+(def jsa (let [x (make-hybrids
+                  (->> leftover-clus-ref77+pg30
+                       (filter #(> (count (% :members)) 1))))]
+           (run-clustering-pipe [leftovers-ref77pg30] x)))
+
+
+
+(->> ref77-SP-clusters (map :members) (filter #(> (count %) 19)) count)
+1179
+(->> ref77-SP-clusters (map :members) (filter #(> (count %) 18)) count)
+1535
+
+(->> ref77+PG30-SP-clusters (map :members) (filter #(> (count %) 47)) count)
+1376
+(->> ref77+PG30-SP-clusters (map :members) (filter #(> (count %) 48)) count)
+1297
+(->> ref77+PG30-SP-clusters (map :members) (filter #(> (count %) 49)) count)
+1029
+
+
+
+(def ref-10-clusters-tst
+  (time (cluster-strains (take 10 ref-dists) center-dists :jsdctpt 0.40)))
+(def all-matched-tst
+  (->> ref-10-clusters-tst (mapcat :members) (map first)))
+(def hybrid-tst (make-hybrids ref-10-clusters-tst))
+(def leftover-clus
+  (cluster-strains
+   [(leftovers-from-clustering
+     ref-10-clusters-tst (->> ref-dists (take 10) (apply concat)))]
+   hybrid-tst))
 (io/with-out-writer
   "/store/data/PanClus/Entropy/ref-clusters-040.clj"
   (prn ref-clusters-040))
+
+(count (leftovers-from-clustering
+        ref-10-clusters-tst (->> ref-dists (take 10) (apply concat))))
+(count (leftovers-from-clustering
+        leftover-clus (->> ref-dists (take 10) (apply concat))))
+(count (leftovers-from-clustering
+        leftover-clus-2 (->> ref-dists (take 10) (apply concat))))
+
+
+(->> ref-10-clusters-tst (map :members) (map count) m/sum)
+18895
+(->> leftover-clus (map :members) (map count) m/sum)
+21637
+(->> leftover-clus (map :members) (map count) (filter #(> % 0)) count)
+2216
+(->> ref-10-clusters-tst (map :members) (map count) (filter #(> % 0)) count)
+2043
+
+
 
 (def ref-clu-map040
   (reduce (fn[M clu]
@@ -471,8 +691,8 @@
      (sort >) (take-while #(> % 0.45)) count)
 
 
-(cluster-strains ref-dists (take 5 (coll/dropv 1000 maxNCdists)))
-(cluster-strains ref-dists (take 5 (coll/dropv 2000 maxNCdists)))
+(cluster-strains ref-dists (take 5 (coll/dropv 1000 center-dists)))
+(cluster-strains ref-dists (take 5 (coll/dropv 2000 center-dists)))
 
 
 (def size-dist
@@ -490,13 +710,13 @@
 60
 (+ 282 222)
 504
-(->> maxNCdists (take-while #(< (second %) 60)) count)
+(->> center-dists (take-while #(< (second %) 60)) count)
 120
-(->> maxNCdists (take-while #(< (second %) 504)) count)
+(->> center-dists (take-while #(< (second %) 504)) count)
 
 (def jsadists
   (conj (map refdists-map (butlast (map first (first *1))))
-        (first (coll/dropv 1000 maxNCdists))))
+        (first (coll/dropv 1000 center-dists))))
 
 (p/mean (map second (map refdists-map (map first (rest jsadists)))))
 
@@ -509,3 +729,4 @@
 (195 195 195 195 195 195 195 195 195 195 195 195 194)
 
 (cluster-strains ref-dists [hybdist])
+)
