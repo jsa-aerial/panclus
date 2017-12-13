@@ -248,17 +248,19 @@
    & {:keys [len-max %-max jsdctpt] :or {len-max 5 %-max 0.99 jsdctpt 0.40}}]
 
   (let [dists (->> dists (apply concat))
-        ref-len-dists-map (gen-len-dists-map dists)
+        nm-distmap (gen-nm-dists-map dists)
         mean (p/mean (map second dists))
         std  (p/std-deviation (map second dists))
         mean-std (long (- mean std))
         mean+std (long (+ mean std 7))]
     (loop [center-dists center-dists
            i @PGSP-index
-           clus []]
+           clus []
+           distmap nm-distmap]
       (if (empty? center-dists)
         clus
-        (let [{:keys [center members name]} (first center-dists)
+        (let [ref-len-dists-map (gen-len-dists-map (vals distmap))
+              {:keys [center members name]} (first center-dists)
               [n1 pcnt P] center
               ;;_ (prn :n1 n1 :pcnt pcnt :means mean-std mean+std)
               hybrid? (hybrid-center? name)
@@ -285,10 +287,14 @@
               ;; Cluster for center P
               clu {:center [n1 0.0 pcnt P]
                    :members (into members new-members)
-                   :name (if hybrid? name (format "PGSP_%05d" i))}]
+                   :name (if hybrid? name (format "PGSP_%05d" i))}
+              ;; Remove matches from next round
+              new-distmap (apply dissoc distmap (mapv first new-members))]
+          #_(println :new-distmap (count new-distmap))
           (recur (rest center-dists)
                  (if hybrid? i (swap! PGSP-index inc))
-                 (conj clus clu)))))))
+                 (conj clus clu)
+                 new-distmap))))))
 
 (defn cluster-leftovers
   "After a cluster pipe cycling converges there may (most likely will)
@@ -422,43 +428,51 @@
             cur-leftcnt (count leftovers)
             nextclus (cluster-strains [leftovers] hybrids)]
         (println :diff (- leftcnt cur-leftcnt))
-        (if (< (- leftcnt cur-leftcnt) diffcut)
+        (if (<= (- leftcnt cur-leftcnt) diffcut)
           nextclus
           (recur nextclus, cur-leftcnt))))))
 
 (defn cluster-and-coalesce
-  [leftover-dists jsdctpt]
+  [leftover-dists jsdctpt diffcut]
   (println "Cluster/coalesce ...")
   (let [initial-clus (cluster-leftovers leftover-dists :jsdctpt jsdctpt)
         non-singletons (filter #(> (count (% :members)) 1) leftover-clus)
         hybrid-clus (make-hybrids non-singletons)]
     ;; rerun clustering using information centroids over original
     ;; dists to generate final clustering.
-    (run-clustering-pipe [leftover-dists] hybrid-clus)))
+    (run-clustering-pipe [leftover-dists] hybrid-clus
+                         :jsdctpt jsdctpt :diffcut diffcut)))
 
 ;;; (map (fn[tuple]
 ;;;        {:center tuple :members #{} :name (first tuple)})
 ;;;      (gen-strain-group-dists [start-center-fna] :ows ows))
 (defn run-strain-clustering
   ""
-  [strain-fnas center-start
-   & {:keys [len-max %-max jsdctpt diffcut chunk-size]
+  [strain-fnas
+   & {:keys [len-max %-max jsdctpt diffcut chunk-size centers-start]
       :or {len-max 5 %-max 0.99 jsdctpt 0.40 diffcut 5 chunk-size 10}}]
+  (println :let)
   (let [alpha :aa
         ows (ows alpha)]
+    (println :at-loop)
     (loop [strain-fnas strain-fnas
-           clusters center-start]
+           clusters (if centers-start centers-start [])]
       (if (empty? strain-fnas)
         clusters
         (let [chunk-fnas (take chunk-size strain-fnas)
+              _ (println :fnas)
               chunk-dists (gen-strain-group-dists chunk-fnas :ows ows)
-              chunk-clusters (run-clustering-pipe
-                              chunk-dists clusters
-                              :diffcut diffcut :jsdctpt jsdctpt)
+              _ (println :dists)
+              chunk-clusters (if centers-start
+                               (run-clustering-pipe
+                                chunk-dists clusters
+                                :diffcut diffcut :jsdctpt jsdctpt)
+                               (cluster-and-coalesce
+                                (apply concat chunk-dists) jsdctpt diffcut))
               leftover-dists (leftovers-from-clustering
                               chunk-clusters (apply concat chunk-dists))
               leftover-clus (cluster-and-coalesce
-                             leftover-dists jsdctpt)
+                             leftover-dists jsdctpt diffcut)
               clusters (merge-clusters chunk-clusters leftover-clus)]
           (println "At recur point")
           (recur (drop chunk-size strain-fnas)
@@ -467,24 +481,25 @@
 
 
 (comment
+  (let [x (time (run-strain-clustering
+                 (take 2 reffnas)
+                 :jsdctpt 0.6 :chunk-size 1))]
+    [(count x) (->> x (filter #(-> % :members count (> 1))) count)])
 
-(def ref77-SP-clusters
-  (time (run-strain-clustering
-         (rest reffnas) (fna2center-start (first reffnas))
-         :jsdctpt 0.6 :chunk-size 20)))
-
-(def ref77+PG30-SP-clusters
-  (time (run-strain-clustering
-         (pgfnas :pg30) ref77-SP-clusters
-         :jsdctpt 0.6 :chunk-size 30)))
 
 (def ref77+PG30-SP-clusters
   (time (run-strain-clustering
-         (concat (rest reffnas) (pgfnas :pg30))
-         (fna2center-start (first reffnas))
-         :jsdctpt 0.6 :chunk-size 50)))
+         (coll/concatv (rest reffnas) (pgfnas :pg30))
+         :centers-start (-> reffnas first fna2center-start)
+         :jsdctpt 0.4 :chunk-size 20 :diffcut 0)))
+
+
 (def ref77+PG30-SP-clusters
-  (->> ref77+PG30-SP-clusters (filter #(> (count (% :members)) 1))))
+  (time (run-strain-clustering
+         (coll/concatv reffnas (pgfnas :pg30))
+         :jsdctpt 0.6 :chunk-size 1)))
+
+
 
 
 (def leftovers-ref77pg30
