@@ -283,12 +283,18 @@
 
 
 
-(->> ref77+PG30-SP-clusters
+
+
+(->> ref-dists (concat (gen-strain-group-dists (pgfnas :pg30) :ows (ows :aa)))
+     (apply concat) count)
+108123
+
+(->> ref77+PG30-SP-clusters vals
      #_(filter #(> (count (% :members)) 1))
      (group-by #(count (% :members)))
      (map (fn[[k m]] [k (count m)]))
      (sort-by first)
-     (map (fn[[sz ct]] {:sz sz :cnt ct})))
+     (mapv (fn[[sz ct]] {:sz sz :cnt ct})))
 =>
 [{:sz 2, :cnt 26} {:sz 3, :cnt 19} {:sz 4, :cnt 18} {:sz 5, :cnt 10} {:sz 6, :cnt 24} {:sz 7, :cnt 15} {:sz 8, :cnt 18} {:sz 9, :cnt 20} {:sz 10, :cnt 7} {:sz 11, :cnt 12} {:sz 12, :cnt 7} {:sz 13, :cnt 8} {:sz 14, :cnt 10} {:sz 15, :cnt 19} {:sz 16, :cnt 12} {:sz 17, :cnt 11} {:sz 18, :cnt 26} {:sz 19, :cnt 33} {:sz 20, :cnt 23} {:sz 21, :cnt 7} {:sz 22, :cnt 11} {:sz 23, :cnt 13} {:sz 24, :cnt 13} {:sz 25, :cnt 12} {:sz 26, :cnt 11} {:sz 27, :cnt 12} {:sz 28, :cnt 14} {:sz 29, :cnt 15} {:sz 30, :cnt 11} {:sz 31, :cnt 23} {:sz 32, :cnt 13} {:sz 33, :cnt 17} {:sz 34, :cnt 15} {:sz 35, :cnt 9} {:sz 36, :cnt 12} {:sz 37, :cnt 15} {:sz 38, :cnt 11} {:sz 39, :cnt 20} {:sz 40, :cnt 10} {:sz 41, :cnt 19} {:sz 42, :cnt 20} {:sz 43, :cnt 19} {:sz 44, :cnt 28} {:sz 45, :cnt 40} {:sz 46, :cnt 31} {:sz 47, :cnt 50} {:sz 48, :cnt 79} {:sz 49, :cnt 268} {:sz 50, :cnt 935} {:sz 51, :cnt 2} {:sz 52, :cnt 2} {:sz 53, :cnt 1} {:sz 55, :cnt 1} {:sz 56, :cnt 1} {:sz 57, :cnt 1} {:sz 58, :cnt 2} {:sz 59, :cnt 4} {:sz 60, :cnt 3} {:sz 61, :cnt 2} {:sz 63, :cnt 2} {:sz 67, :cnt 4} {:sz 68, :cnt 1} {:sz 71, :cnt 4} {:sz 73, :cnt 6} {:sz 75, :cnt 1} {:sz 76, :cnt 2} {:sz 77, :cnt 1} {:sz 78, :cnt 2} {:sz 83, :cnt 2} {:sz 90, :cnt 1} {:sz 91, :cnt 2} {:sz 93, :cnt 1} {:sz 94, :cnt 1} {:sz 98, :cnt 11} {:sz 106, :cnt 5} {:sz 107, :cnt 1} {:sz 117, :cnt 2} {:sz 126, :cnt 1} {:sz 127, :cnt 1} {:sz 131, :cnt 1} {:sz 133, :cnt 1} {:sz 136, :cnt 4} {:sz 159, :cnt 5} {:sz 175, :cnt 1} {:sz 181, :cnt 1} {:sz 194, :cnt 1} {:sz 202, :cnt 1} {:sz 219, :cnt 1} {:sz 223, :cnt 1} {:sz 224, :cnt 4} {:sz 225, :cnt 2} {:sz 313, :cnt 1}]
 
@@ -300,3 +306,40 @@
      (map (fn[[sz ct]] {:sz sz :cnt ct})))
 =>
 [{:sz 2, :cnt 1085} {:sz 3, :cnt 390} {:sz 4, :cnt 323} {:sz 5, :cnt 282} {:sz 6, :cnt 192} {:sz 7, :cnt 140} {:sz 8, :cnt 135} {:sz 9, :cnt 122} {:sz 10, :cnt 82} {:sz 11, :cnt 55} {:sz 12, :cnt 58} {:sz 13, :cnt 46} {:sz 14, :cnt 48} {:sz 15, :cnt 41} {:sz 16, :cnt 38} {:sz 17, :cnt 33} {:sz 18, :cnt 47} {:sz 19, :cnt 50} {:sz 20, :cnt 36} {:sz 21, :cnt 21} {:sz 22, :cnt 26} {:sz 23, :cnt 22} {:sz 24, :cnt 25} {:sz 25, :cnt 24} {:sz 26, :cnt 16} {:sz 27, :cnt 22} {:sz 28, :cnt 31} {:sz 29, :cnt 20} {:sz 30, :cnt 21} {:sz 31, :cnt 31} {:sz 32, :cnt 18} {:sz 33, :cnt 25} {:sz 34, :cnt 18} {:sz 35, :cnt 12} {:sz 36, :cnt 16} {:sz 37, :cnt 25} {:sz 38, :cnt 14} {:sz 39, :cnt 23} {:sz 40, :cnt 14} {:sz 41, :cnt 21} {:sz 42, :cnt 22} {:sz 43, :cnt 22} {:sz 44, :cnt 28} {:sz 45, :cnt 42} {:sz 46, :cnt 32} {:sz 47, :cnt 50} {:sz 48, :cnt 82} {:sz 49, :cnt 269} {:sz 50, :cnt 935} {:sz 51, :cnt 3} {:sz 52, :cnt 2} {:sz 53, :cnt 1} {:sz 54, :cnt 1} {:sz 55, :cnt 1} {:sz 56, :cnt 1} {:sz 57, :cnt 1} {:sz 58, :cnt 2} {:sz 59, :cnt 4} {:sz 60, :cnt 4} {:sz 61, :cnt 2} {:sz 63, :cnt 2} {:sz 67, :cnt 4} {:sz 68, :cnt 1} {:sz 71, :cnt 4} {:sz 73, :cnt 6} {:sz 75, :cnt 1} {:sz 76, :cnt 2} {:sz 77, :cnt 1} {:sz 78, :cnt 2} {:sz 83, :cnt 2} {:sz 90, :cnt 1} {:sz 91, :cnt 2} {:sz 93, :cnt 1} {:sz 94, :cnt 1} {:sz 98, :cnt 11} {:sz 106, :cnt 5} {:sz 107, :cnt 1} {:sz 117, :cnt 2} {:sz 126, :cnt 1} {:sz 127, :cnt 1} {:sz 131, :cnt 1} {:sz 133, :cnt 1} {:sz 136, :cnt 4} {:sz 159, :cnt 5} {:sz 175, :cnt 1} {:sz 181, :cnt 1} {:sz 194, :cnt 1} {:sz 202, :cnt 1} {:sz 219, :cnt 1} {:sz 223, :cnt 1} {:sz 224, :cnt 4} {:sz 225, :cnt 2} {:sz 313, :cnt 1}]
+
+
+
+(io/with-out-writer "/store/data/PanClus/Entropy/ref77+PG30-SP-clusters.clj"
+  (prn ref77+PG30-SP-clusters))
+
+(->> ref77+PG30-SP-clusters vals
+     (group-by #(count (% :members)))
+     (map (fn[[k m]] [k (count m)]))
+     (sort-by first)
+     (mapv (fn[[sz ct]] {:sz sz :cnt ct})))
+=>
+[{:sz 2, :cnt 94} {:sz 3, :cnt 101} {:sz 4, :cnt 78} {:sz 5, :cnt 124} {:sz 6, :cnt 156} {:sz 7, :cnt 121} {:sz 8, :cnt 114} {:sz 9, :cnt 170} {:sz 10, :cnt 473} {:sz 11, :cnt 1492} {:sz 12, :cnt 1102} {:sz 13, :cnt 6} {:sz 14, :cnt 18} {:sz 15, :cnt 7} {:sz 16, :cnt 5} {:sz 17, :cnt 4} {:sz 18, :cnt 12} {:sz 19, :cnt 6} {:sz 20, :cnt 3} {:sz 21, :cnt 10} {:sz 22, :cnt 10} {:sz 23, :cnt 4} {:sz 24, :cnt 5} {:sz 25, :cnt 3} {:sz 27, :cnt 8} {:sz 28, :cnt 4} {:sz 29, :cnt 6} {:sz 31, :cnt 3} {:sz 32, :cnt 13} {:sz 33, :cnt 11} {:sz 34, :cnt 1} {:sz 35, :cnt 2} {:sz 36, :cnt 2} {:sz 43, :cnt 1} {:sz 44, :cnt 8} {:sz 45, :cnt 4} {:sz 46, :cnt 6} {:sz 47, :cnt 1} {:sz 48, :cnt 1} {:sz 49, :cnt 1} {:sz 50, :cnt 2} {:sz 51, :cnt 1} {:sz 52, :cnt 1} {:sz 53, :cnt 2} {:sz 54, :cnt 1} {:sz 55, :cnt 1} {:sz 56, :cnt 1} {:sz 58, :cnt 1}]
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/ref77+PG30-SP-clusters-centers-jsdcpt4.clj"
+  (prn ref77+PG30-SP-clusters))
+
+
+[{:sz 0, :cnt 35} {:sz 1, :cnt 26} {:sz 2, :cnt 134} {:sz 3, :cnt 104} {:sz 4, :cnt 108} {:sz 5, :cnt 120} {:sz 6, :cnt 146} {:sz 7, :cnt 142} {:sz 8, :cnt 133} {:sz 9, :cnt 165} {:sz 10, :cnt 439} {:sz 11, :cnt 1203} {:sz 12, :cnt 64} {:sz 13, :cnt 77} {:sz 14, :cnt 65} {:sz 15, :cnt 82} {:sz 16, :cnt 73} {:sz 17, :cnt 79} {:sz 18, :cnt 109} {:sz 19, :cnt 139} {:sz 20, :cnt 313} {:sz 21, :cnt 1038} {:sz 22, :cnt 35} {:sz 23, :cnt 48} {:sz 24, :cnt 31} {:sz 25, :cnt 42} {:sz 26, :cnt 29} {:sz 27, :cnt 39} {:sz 28, :cnt 38} {:sz 29, :cnt 29} {:sz 30, :cnt 32} {:sz 31, :cnt 39} {:sz 32, :cnt 49} {:sz 33, :cnt 34} {:sz 34, :cnt 38} {:sz 35, :cnt 42} {:sz 36, :cnt 51} {:sz 37, :cnt 64} {:sz 38, :cnt 69} {:sz 39, :cnt 101} {:sz 40, :cnt 276} {:sz 41, :cnt 964} {:sz 42, :cnt 25} {:sz 43, :cnt 27} {:sz 44, :cnt 43} {:sz 45, :cnt 48} {:sz 46, :cnt 35} {:sz 47, :cnt 48} {:sz 48, :cnt 91} {:sz 49, :cnt 270} {:sz 50, :cnt 920} {:sz 51, :cnt 14} {:sz 52, :cnt 2} {:sz 53, :cnt 7} {:sz 54, :cnt 1} {:sz 55, :cnt 3} {:sz 56, :cnt 1} {:sz 57, :cnt 5} {:sz 58, :cnt 3} {:sz 59, :cnt 5} {:sz 60, :cnt 1} {:sz 61, :cnt 1} {:sz 62, :cnt 7} {:sz 63, :cnt 2} {:sz 66, :cnt 6} {:sz 67, :cnt 2} {:sz 68, :cnt 1} {:sz 69, :cnt 2} {:sz 70, :cnt 1} {:sz 71, :cnt 2} {:sz 73, :cnt 5} {:sz 74, :cnt 1} {:sz 75, :cnt 4} {:sz 76, :cnt 4} {:sz 77, :cnt 2} {:sz 79, :cnt 2} {:sz 80, :cnt 1} {:sz 81, :cnt 1} {:sz 82, :cnt 1} {:sz 84, :cnt 1} {:sz 87, :cnt 2} {:sz 88, :cnt 2} {:sz 89, :cnt 5} {:sz 92, :cnt 2} {:sz 93, :cnt 2} {:sz 94, :cnt 2} {:sz 95, :cnt 1} {:sz 96, :cnt 1} {:sz 97, :cnt 3} {:sz 98, :cnt 12} {:sz 103, :cnt 1} {:sz 108, :cnt 5} {:sz 112, :cnt 5} {:sz 115, :cnt 2} {:sz 121, :cnt 1} {:sz 122, :cnt 1} {:sz 124, :cnt 1} {:sz 127, :cnt 1} {:sz 129, :cnt 1} {:sz 132, :cnt 2} {:sz 134, :cnt 1} {:sz 138, :cnt 1} {:sz 152, :cnt 1} {:sz 154, :cnt 1} {:sz 156, :cnt 1} {:sz 157, :cnt 1} {:sz 158, :cnt 1} {:sz 159, :cnt 5} {:sz 160, :cnt 1} {:sz 162, :cnt 1} {:sz 163, :cnt 1} {:sz 186, :cnt 1} {:sz 199, :cnt 1} {:sz 200, :cnt 1} {:sz 205, :cnt 1} {:sz 211, :cnt 1} {:sz 212, :cnt 1} {:sz 213, :cnt 1} {:sz 216, :cnt 1} {:sz 222, :cnt 1} {:sz 223, :cnt 1}]
+
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/ref77+PG30-SP-clusters-centers-jsd4-cksz-50.clj"
+  (prn ref77+PG30-SP-clusters))
+
+
+
+
+
+
+(->> ref77-SP-clusters vals
+     (#(->> % (map :members) (filter #(> (count %) 1))))
+     (group-by #(-> % :jsd :m (roundit :places 2)))
+     (map (fn[[k m]] [k (count m)]))
+     (sort-by first)
+     (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))
