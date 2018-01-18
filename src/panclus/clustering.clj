@@ -246,7 +246,12 @@
 
   Returns a map with entries [k m], with k a PGSP locus tag formed
   using 'pgsp-start' integer as beginning number, and m a map of the
-  form {:center [n cnt P], :members #{n} :name k}"
+  form:
+
+  {:center [n cnt Q], :dists [Q] :jsds [n 0.0]
+   :cnt {:sm cnt, :d 1, :m cnt}
+   :members #{n} :name k}"
+
   [coll pgsp-start]
   (if (map? coll)
     coll
@@ -256,7 +261,7 @@
                 (let [pgnm (format "PGSP_%05d" (swap! PGSP-index inc))]
                   (assoc M pgnm {:center [pgnm cnt Q]
                                  :dists [Q]
-                                 :jsd {:sm 0.0, :d 1, :m 0.0, :mx 0.0, :mn 0.0}
+                                 :jsds [[nm 0.0]]
                                  :cnt {:sm cnt, :d 1, :m cnt}
                                  :members #{nm}
                                  :name pgnm})))
@@ -308,14 +313,12 @@
                           curclus (get clus nm)
                           members (:members curclus)
                           new-dists (:dists curclus)
-                          {:keys [sm d m mx mn] :as clujsd} (curclus :jsd)
-                          new-jsd (assoc (-> clujsd (running-mean jsd))
-                                         :mx (max mx jsd) :mn (min mn jsd))
+                          jsds (conj (curclus :jsds) [n1 jsd])
                           new-cnt (-> curclus :cnt (running-mean pcnt))]
                       (-> curclus
                           (assoc-in [:dists] (conj new-dists P))
                           (assoc-in  [:members] (conj members n1))
-                          (assoc-in [:jsd] new-jsd)
+                          (assoc-in [:jsds] jsds)
                           (assoc-in [:cnt] new-cnt))))
               new-clus (if clu (assoc clus (clu :name) clu) clus)]
           #_(println :new-distmap (count new-distmap))
@@ -329,11 +332,11 @@
   distributions suitable for new rounds of clustering."
   [clusters & {:keys [wz] :or {wz 6}}]
   (reduce (fn[M clu]
-            (let [{:keys [center members dists jsd cnt name]} clu
+            (let [{:keys [center members dists jsds cnt name]} clu
                   Q (it/hybrid-dictionary wz dists)]
               (assoc M name {:center [name (-> cnt :m long) Q]
                              :dists [Q]
-                             :jsd jsd
+                             :jsds jsds
                              :cnt cnt
                              :members members
                              :name name})))
@@ -511,6 +514,46 @@
        clusters))
 
 
+(defn clus-jsd-data
+  [clusters & {:keys [cnt] :or {cnt 1}}]
+  (->> clusters
+       (filter (fn[[k m]] (-> m :members count (>  cnt))))
+       vals
+       (mapv (fn[m]
+               (let [jsds (->> m :jsds (sort-by second) (mapv second))
+                     mjsd (p/mean jsds)
+                     mxjsd (last jsds)
+                     vjsd (p/variance jsds)
+                     stdjsd (p/std-deviation jsds)
+                     n1sdev (- mjsd stdjsd)
+                     p1sdev (+ mjsd stdjsd)
+                     sdev-jsds (filter #(<= n1sdev % p1sdev) jsds)
+                     less+1sdev-jsds (filter #(<= % p1sdev) jsds)]
+                 {:mean mjsd :mx mxjsd :var vjsd :sdev stdjsd
+                  :-1sdev n1sdev :+1sdev p1sdev
+                  :jsds jsds
+                  :within-1sdev sdev-jsds
+                  :less+1sdev less+1sdev-jsds})))))
+
+(defn clus-counts
+  [clusters & {:keys [cnt sdev-grp cut%]
+               :or {cnt 1, sdev-grp :within-1sdev cut% 0.8}}]
+  (let [jsdata (clus-jsd-data clusters :cnt cnt)
+        total (->> jsdata
+                   (filter #(>= (-> % sdev-grp count
+                                    (/ (-> % :jsds count))
+                                    double)
+                                cut%))
+                   count)
+        percent (-> total (/ (count jsdata)) double roundit)]
+    [total percent]))
+
+(defn clus-jsd-dists
+  [clusters]
+  )
+
+
+
 (comment
 
 (let [x (leftovers-from-clustering
@@ -542,6 +585,16 @@
          (rest reffnas)
          (-> reffnas first (gen-strain-dists :ows (ows :aa)))
          :pgsp-start 0 :jsdctpt 0.4 :chunk-size 2 :diffcut 0)))
+(def ref77-SP-clusters
+  (-> (pams/get-params :panclus-base)
+      (fs/join "Entropy/ref77-SP-clusters.clj")
+      slurp read-string))
+
+(def ref77pg30-fut
+  (future (run-strain-clustering
+           (pgfnas :pg30)
+           ref77-SP-clusters
+           :pgsp-start @PGSP-index :jsdctpt 0.55 :chunk-size 2 :diffcut 0)))
 
 (def ref77+PG30-SP-clusters
   (time (run-strain-clustering
@@ -552,6 +605,17 @@
 
 (def ref77pg30-nosinglets (clustering-minus-singlets ref77+PG30-SP-clusters))
 (def singlets (clustering->singlet-dists ref77+PG30-SP-clusters))
+
+
+(def ref77+PG30-SP-clusters
+  (-> (pams/get-params :panclus-base)
+      (fs/join "Entropy/ref77+PG30-SP-clusters.clj")
+      slurp read-string))
+(def ref77pg350-fut
+  (future (run-strain-clustering
+           (pgfnas :pg320)
+           ref77+PG30-SP-clusters
+           :pgsp-start @PGSP-index :jsdctpt 0.55 :chunk-size 2 :diffcut 0)))
 
 
 
