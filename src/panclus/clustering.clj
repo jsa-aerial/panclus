@@ -160,6 +160,20 @@
   [dists]
   (reduce (fn[M [n cnt P :as v]] (assoc M n v)) {} dists))
 
+(defn member->entry
+  "Return entry part of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") first))
+
+(defn member->locus
+  "Return locus-tag part of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") second))
+
+(defn member->strain
+  "Return strain part of entry of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") first bufiles/entry-parts first))
 
 
 (comment
@@ -248,7 +262,7 @@
   using 'pgsp-start' integer as beginning number, and m a map of the
   form:
 
-  {:center [n cnt Q], :dists [Q] :jsds [n 0.0]
+  {:center [k cnt Q], :dists [Q] :jsds [n 0.0]
    :cnt {:sm cnt, :d 1, :m cnt}
    :members #{n} :name k}"
 
@@ -277,11 +291,7 @@
   (let [dists (->> dists (apply concat))
         clus (init-clusters start-clusters pgsp-start)
         center-dists (mapv #(% :center) (vals clus))
-        len-distmap (gen-len-dists-map center-dists)
-        mean (p/mean (map second center-dists))
-        std  (p/std-deviation (map second center-dists))
-        mean-std (long (- mean std))
-        mean+std (long (+ mean std 7))]
+        len-distmap (gen-len-dists-map center-dists)]
     (loop [dists dists
            clus clus]
       (if (empty? dists)
@@ -292,13 +302,9 @@
               ;; Adjust clus distribution set to use, for current
               ;; dists point, by length - Only for optimization - not
               ;; actually needed for RE
-              ds (if (< mean-std pcnt mean+std)
-                   (->> (range (- pcnt len-max -1)
-                               (+ pcnt len-max))
-                        (mapcat len-distmap))
-                   (->> (range (-> pcnt (* 0.99) Math/round)
-                               (-> pcnt (* 1.01) Math/round))
-                        (mapcat len-distmap)))
+              ds (->> (range (-> pcnt (* 0.80) Math/round)
+                             (-> pcnt (* 1.20) Math/round))
+                      (mapcat len-distmap))
               ;; Gen scores of current dists point to centers in 'ds'
               ;; set. Pick center with lowest score.
               best-center (->> ds
@@ -585,6 +591,7 @@
          (rest reffnas)
          (-> reffnas first (gen-strain-dists :ows (ows :aa)))
          :pgsp-start 0 :jsdctpt 0.4 :chunk-size 2 :diffcut 0)))
+"Elapsed time: 8545367.909075 msecs"
 (def ref77-SP-clusters
   (-> (pams/get-params :panclus-base)
       (fs/join "Entropy/ref77-SP-clusters.clj")
@@ -594,7 +601,7 @@
   (future (run-strain-clustering
            (pgfnas :pg30)
            ref77-SP-clusters
-           :pgsp-start @PGSP-index :jsdctpt 0.55 :chunk-size 2 :diffcut 0)))
+           :pgsp-start @PGSP-index :jsdctpt 0.4 :chunk-size 2 :diffcut 0)))
 
 (def ref77+PG30-SP-clusters
   (time (run-strain-clustering
