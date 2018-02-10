@@ -236,9 +236,6 @@
      (filter (fn[[_ [mn mx av] & _]] (> mx 0.99))) last)
 
 
-(defn roundit [r & {:keys [places] :or {places 4}}]
-  (let [n (Math/pow 10.0 places)]
-    (-> r (* n) Math/round (/ n))))
 
 
 
@@ -286,109 +283,7 @@
 
 
 
-(->> ref-dists-all
-     (concat (gen-strain-group-dists (pgfnas :pg30) :ows (ows :aa)))
-     (apply concat) count)
-110339
 
-
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77-SP-clusters.clj"
-  (prn ref77-SP-clusters))
-
-(->> ref77-SP-clusters vals
-     (group-by #(count (% :members)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[sz ct]] {:sz sz :cnt ct})))
-=>
-
-
-
-
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77+PG30-SP-clusters.clj"
-  (prn ref77+PG30-SP-clusters))
-
-(->> ref77+PG30-SP-clusters vals
-     (group-by #(count (% :members)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[sz ct]] {:sz sz :cnt ct})))
-=>
-[{:sz 1, :cnt 2183} {:sz 2, :cnt 1109} {:sz 3, :cnt 444} {:sz 4, :cnt 360} {:sz 5, :cnt 309} {:sz 6, :cnt 185} {:sz 7, :cnt 168} {:sz 8, :cnt 145} {:sz 9, :cnt 125} {:sz 10, :cnt 93} {:sz 11, :cnt 54} {:sz 12, :cnt 66} {:sz 13, :cnt 58} {:sz 14, :cnt 56} {:sz 15, :cnt 41} {:sz 16, :cnt 46} {:sz 17, :cnt 43} {:sz 18, :cnt 34} {:sz 19, :cnt 47} {:sz 20, :cnt 50} {:sz 21, :cnt 34} {:sz 22, :cnt 24} {:sz 23, :cnt 23} {:sz 24, :cnt 31} {:sz 25, :cnt 26} {:sz 26, :cnt 24} {:sz 27, :cnt 20} {:sz 28, :cnt 34} {:sz 29, :cnt 24} {:sz 30, :cnt 23} {:sz 31, :cnt 24} {:sz 32, :cnt 23} {:sz 33, :cnt 21} {:sz 34, :cnt 17} {:sz 35, :cnt 16} {:sz 36, :cnt 20} {:sz 37, :cnt 24} {:sz 38, :cnt 17} {:sz 39, :cnt 16} {:sz 40, :cnt 15} {:sz 41, :cnt 16} {:sz 42, :cnt 21} {:sz 43, :cnt 21} {:sz 44, :cnt 20} {:sz 45, :cnt 29} {:sz 46, :cnt 42} {:sz 47, :cnt 33} {:sz 48, :cnt 46} {:sz 49, :cnt 74} {:sz 50, :cnt 263} {:sz 51, :cnt 915} {:sz 52, :cnt 1} {:sz 53, :cnt 1} {:sz 54, :cnt 3} {:sz 55, :cnt 1} {:sz 56, :cnt 1} {:sz 57, :cnt 1} {:sz 59, :cnt 1} {:sz 60, :cnt 2} {:sz 62, :cnt 1} {:sz 65, :cnt 1} {:sz 74, :cnt 1} {:sz 76, :cnt 1} {:sz 77, :cnt 2} {:sz 109, :cnt 2} {:sz 132, :cnt 1}]
-
-
-
-
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77+PG350-SP-clusters.clj"
-  (prn @ref77pg350-fut))
-
-(->> @ref77pg350-fut vals
-     (group-by #(count (% :members)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[sz ct]] {:sz sz :cnt ct})))
-
-
-
-
-(->> ref77-SP-clusters
-     clus-jsd-data
-     (group-by #(-> % :mean (roundit :places 2)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))
-
-
-(->> ref77+PG30-SP-clusters
-     clus-jsd-data
-     (group-by #(-> % :mean (roundit :places 2)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))
-
-
-(->> @ref77pg350-fut
-     clus-jsd-data
-     (group-by #(-> % :mean (roundit :places 2)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))
-
-
-
-
-(->> ref77+PG30-SP-clusters
-     (#(clus-jsd-data % :cnt 1))
-     (group-by #(-> % :mx (roundit :places 2)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[mx ct]] {:mx mx :cnt ct}))
-     (filter #(<= (% :mx) 0.4))
-     (mapv :cnt)
-     m/sum)
-
-(->> @ref77pg350-fut
-     clus-jsd-data
-     (group-by #(-> % :mx (roundit :places 2)))
-     (map (fn[[k m]] [k (count m)]))
-     (sort-by first)
-     (mapv (fn[[mx ct]] {:mx mx :cnt ct}))
-     (filter #(<= (% :mx) 0.4))
-     (mapv :cnt)
-     m/sum)
-
-
-
-
-
-(clus-counts ref77-SP-clusters :sdev-grp :less+1sdev :cut% 0.8)
-(clus-counts ref77-SP-clusters :sdev-grp :within-1sdev :cut% 0.8)
-
-(clus-counts ref77+PG30-SP-clusters :sdev-grp :less+1sdev :cut% 0.8)
-(clus-counts ref77+PG30-SP-clusters :sdev-grp :within-1sdev :cut% 0.8)
-
-(clus-counts @ref77pg350-fut :sdev-grp :less+1sdev :cut% 0.8)
-(clus-counts @ref77pg350-fut :sdev-grp :within-1sdev :cut% 0.8)
 
 
 
@@ -396,6 +291,16 @@
      (mapv #(roundit % :places 2))
      (group-by identity)
      (mapv (fn[[k v]] {:x k :y (count v)})))
+
+
+(->> (clus-jsd-data @ref77pg350-fut :cnt 370)
+     (filter #(< (-> % :jsds count) 372))
+     (random-sample 0.05)
+     (map :jsds)
+     (mapv (fn[x] (mapv #(roundit % :places 2) x)))
+     (mapv (fn[x] (group-by identity x)))
+     (mapv (fn[x] (mapv (fn[[k v]] {:x k :y (count v)}) x))))
+
 
 
 
@@ -411,116 +316,101 @@
      (coll/drop-until #(-> % second (> 0.1)))
      count)
 
-(io/with-out-writer
-  "/store/data/PanClus/Stats/cluster-jsd-means-sdevs-371-only.clj"
-  (prn (->> (clus-jsd-data @ref77pg350-fut :cnt 370)
-            (filter #(< (-> % :jsds count) 372))
-            (mapv #(vector (-> % :mean roundit) (-> % :sdev roundit)))
-            (sort-by second)
-            #_(coll/drop-until #(-> % second (> 0.1)))
-            (group-by #(-> % second))
-            (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
-
-(io/with-out-writer
-  "/store/data/PanClus/Stats/cluster-jsd-means-sdevs-372-plus.clj"
-  (prn (->> (clus-jsd-data @ref77pg350-fut :cnt 371)
-            #_(filter #(< (-> % :jsds count) 372))
-            (mapv #(vector (-> % :mean roundit) (-> % :sdev roundit)))
-            (sort-by second)
-            #_(coll/drop-until #(-> % second (> 0.1)))
-            (group-by #(-> % second))
-            (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
-
-
-(->> (range 0.1 0.9 0.1) (map roundit)
-     (mapv #(vector % (clus-counts @ref77pg350-fut
-                                   :sdev-grp :within-1sdev :cut% %)))
-     (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))
-
-(->> (range 0.1 0.9 0.1) (map roundit)
-     (mapv #(vector % (clus-counts @ref77pg350-fut
-                                   :sdev-grp :less+1sdev :cut% %)))
-     (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))
 
 
 
 
-(->> (clus-jsd-data @ref77pg350-fut :cnt 370)
-     (filter #(< (-> % :jsds count) 372))
-     (random-sample 0.05)
-     (map :jsds)
-     (mapv (fn[x] (mapv #(roundit % :places 2) x)))
-     (mapv (fn[x] (group-by identity x)))
-     (mapv (fn[x] (mapv (fn[[k v]] {:x k :y (count v)}) x))))
 
 
 
 
-(defn singlet-clu->distpt [clu]
-  (let [nm (-> clu :members first)
-        [_ cnt dist] (clu :center)]
-    [nm cnt dist]))
-
-(defn next-point-dist [clusters mode]
-  (if (= mode :center-center)
-    (-> clusters first :center last)
-    (assert :NYI "only :center-center supported at this point")))
-
-(defn compare-clusters [clusters & {:keys [mode] :or {mode :center-center}}]
-  (loop [comp-dist {}
-         clusters clusters]
-    (if (empty? (rest clusters))
-      comp-dist
-      (let [point-dist (next-point-dist clusters mode)
-            dists (mapv  #(vector (% :name)(-> % :center last)) (rest clusters))
-            [nm score] (->> dists
-                            (vfold (fn[[nm Q]]
-                                     [nm (roundit (it/jensen-shannon point-dist Q))]))
-                            (sort-by second) first)]
-        (println (format "Point %s : [%s %s]" ((first clusters) :name)
-                         nm score))
-        (recur (assoc comp-dist score (inc (get comp-dist score 0)))
-               (rest clusters))))))
+(->> @center-jsd-dist first second
+     (mapv (fn[pair] (mapv #(-> % ref77-SP-clusters :members first) pair)))
+     (mapv (fn[[m1 m2]]
+             (let [x (member->entry m1)
+                   y (member->entry m2)
+                   xsq (->> x bufiles/gen-name-seq second ntseq2aaseq)
+                   ysq (->> y bufiles/gen-name-seq second ntseq2aaseq)
+                   xdist (p/probs 6 xsq)
+                   ydist (p/probs 6 ysq)]
+               [m1 m2 (count xsq) (count ysq)
+                (it/jensen-shannon xdist ydist)]))))
 
 
-(def center-jsd-dist
-  (->> ref77-SP-clusters
-       (filter (fn[[k m]] (-> m :members count (= 1))))
-       vals
-       compare-clusters))
-;;; WTF?!?!
-Point PGSP_05505 : [PGSP_05707 0.2048]
-(->> "PGSP_05505" ref77-SP-clusters ((fn[m] [(-> m :center second) (-> m :members first)])))
-(->> "PGSP_05707" ref77-SP-clusters ((fn[m] [(-> m :center second) (-> m :members first)])))
+(->> center-jsd-dist (sort-by first)
+     (coll/take-until #(-> % first (> 0.3)))
+     (mapv (fn[[scr pairs]]
+             [scr (mapv
+                   (fn[pair]
+                     (let [mems (mapv #(-> % ref77-SP-clusters :members)
+                                      pair)
+                           memcnt (mapv count mems)
+                           lens (mapv #(-> % ref77-SP-clusters :center second)
+                                      pair)]
+                       [memcnt (m/sum memcnt)
+                        lens (->> lens (apply /) double)
+                        mems]))
+                   pairs)]))
+     clojure.pprint/pprint)
 
-Point PGSP_05384 : [PGSP_05553 0.1655]
-(->> "PGSP_05384" ref77-SP-clusters ((fn[m] [(-> m :center second) (-> m :members first)])))
-(->> "PGSP_05553" ref77-SP-clusters ((fn[m] [(-> m :center second) (-> m :members first)])))
-
-Point PGSP_05744 : [PGSP_06906 0.2457]
-Point PGSP_06369 : [PGSP_06286 0.2643]
-
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-center-distance-dist.clj"
-  (prn (->> center-jsd-dist (sort-by first)
-            (mapv (fn[[jsd cnt]] {:jsd jsd :cnt cnt})))))
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77+PG30-center-distance-dist.clj"
-  (prn (->> center-jsd-dist (sort-by first)
-            (mapv (fn[[jsd cnt]] {:jsd jsd :cnt cnt})))))
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77+PG350-singlet-center-distance-dist.clj"
-  (prn (->> @center-jsd-dist-fut (sort-by first)
-            (mapv (fn[[jsd cnt]] {:jsd jsd :cnt cnt})))))
-
-
-(def center-jsd-dist-fut
-  (future (->> @ref77pg350-fut
-               (filter (fn[[k m]] (-> m :members count (> 1))))
-               vals
-               compare-clusters)))
+(->> center-jsd-dist (sort-by first)
+     (coll/take-until #(-> % first (> 0.3)))
+     (mapv (fn[[scr pairs]]
+             [scr (mapv
+                   (fn[pair]
+                     (let [mems (mapv #(-> % ref77-SP-clusters :members)
+                                      pair)
+                           memcnt (mapv count mems)
+                           lens (->> pair
+                                     (mapv #(-> % ref77-SP-clusters
+                                                :center second))
+                                     sort)]
+                       [memcnt (m/sum memcnt)
+                        lens (->> lens (apply /) double)
+                        mems]))
+                   pairs)]))
+     (mapv (fn[[scr pairs]] [scr (mapv (fn[[_ _ _ x]] (roundit x)) pairs)]))
+     (mapv #(-> % second count))
+     m/sum)
 
 
+;;; All clusstering
+(->> @center-jsd-dist (sort-by first)
+     (coll/take-until #(-> % first (> 0.3)))
+     (mapv (fn[[scr pairs]]
+             [scr (mapv
+                   (fn[pair]
+                     (let [mems (mapv #(-> (@ref77pg350-fut %) :members)
+                                      pair)
+                           memcnt (mapv count mems)
+                           lens (->> pair
+                                     (mapv #(-> (@ref77pg350-fut %)
+                                                :center second))
+                                     sort)]
+                       [memcnt (m/sum memcnt)
+                        lens (->> lens (apply /) double)
+                        mems]))
+                   pairs)]))
+     (mapv (fn[[scr pairs]] [scr (mapv (fn[[_ _ _ x]] (roundit x)) pairs)]))
+     clojure.pprint/pprint)
+
+
+
+(->> tigrcenter-jsd-dist (sort-by first)
+     (coll/take-until #(-> % first (> 0.3)))
+     (mapv (fn[[scr pairs]]
+             [scr (mapv
+                   (fn[pair]
+                     (let [mems (mapv #(-> % tigr4-centers :members)
+                                      pair)
+                           memcnt (mapv count mems)
+                           lens (mapv #(-> % tigr4-centers :center second)
+                                      pair)]
+                       [memcnt (m/sum memcnt)
+                        lens (->> lens (apply /) double)
+                        mems]))
+                   pairs)]))
+     clojure.pprint/pprint)
 
 
 
@@ -544,3 +434,401 @@ Point PGSP_06369 : [PGSP_06286 0.2643]
   [id (sort-by second (vfold (fn[[n Q]]
                                [n (it/jensen-shannon cdist Q)])
                              mdists))])
+
+
+
+
+
+
+
+
+
+
+
+
+(->> ref77-SP-clusters vals
+     (filter #(->> % :members (some (fn[m] (= (member->locus m) "SP_RS08960")))))
+     first :members)
+
+(->> ref77-SP-clusters vals
+     (filter #(->> % :members (some (fn[m] (= (member->locus m) "SP_RS07540")))))
+     first :jsds)
+
+
+
+
+"NC_003028/1442913-1443110/-1,SP_RS07540"
+"NC_003028/1720276-1720479/1,SP_RS08960"
+
+(defn get-dist-cnt [x & {:keys [AA] :or {AA true}}]
+  (if (map? x)
+    x
+    (let [xform (if AA ntseq2aaseq identity)
+          x (member->entry x)
+          genomebase (pams/get-params [:biodb-info :genomes :base])
+          basedir (if (= (str/substring x 0 3) "TVO")
+                    (fs/join genomebase (pams/get-params
+                                         [:biodb-info :genomes :tvoseq02]))
+                    (fs/join genomebase (pams/get-params
+                                         [:biodb-info :genomes :refseq77])))
+          xsq (->> (bufiles/gen-name-seq x :basedir basedir)
+                   second xform)
+          xcnt (count xsq)
+          xdist (p/probs 6 xsq)]
+      [xdist xcnt])))
+
+(defn get-dist [x & {:keys [AA] :or {AA true}}]
+  (let [[dist cnt] (get-dist-cnt x :AA AA)]
+    dist))
+
+(defn pair-jsd [x y & {:keys [AA] :or {AA true}}]
+  (let [xdist (get-dist x :AA AA)
+        ydist (get-dist y :AA AA)]
+    (it/jensen-shannon xdist ydist)))
+#_[(it/jensen-shannon xdist ydist) (aln/align xsq ysq :match 1 :mmatch -1)]
+
+(->> #{#_"NC_003028/319495-319842/-1,SP_RS01685"
+       #_"NC_003028/275290-275637/1,SP_RS01460"
+       #_"NC_003028/938452-938799/1,SP_RS04935"
+       #_"NC_003028/769180-769530/1,SP_RS04005"
+       #_(->> "PGSP_11929" tigr4-centers :center last)
+       ;;
+       "NC_003028/1074433-1074849/-1,SP_RS05675"
+       "NC_003028/1921596-1922012/-1,SP_RS10200"
+       "NC_003028/20404-20820/1,SP_RS00105"
+       (->> "PGSP_11343" tigr4-centers :center last)}
+     (aerial.utils.math.combinatorics/combins 2)
+     (mapv (fn[[x y]] (let [s1 (if (string? x) x :dist)
+                           s2 (if (string? y) y :dist)]
+                       [s1 s2 (pair-jsd x y)])))
+     clojure.pprint/pprint)
+
+
+
+
+
+(let [xdist (->> ref77-SP-clusters vals
+                 (filter #(->> % :members
+                               (some (fn[m] (= (member->locus m)
+                                              "SP_RS03400")))))
+                 first :center last)
+      ydist (->> ref77-SP-clusters vals
+                 (filter #(->> % :members
+                               (some (fn[m] (= (member->locus m)
+                                              "SP_RS03405")))))
+                 first :center last)]
+  (it/jensen-shannon xdist ydist))
+
+
+(let [x (member->entry "NC_003028/769180-769530/1,SP_RS04005")
+      y (member->entry "NC_003028/938452-938799/1,SP_RS04935")
+      xsq (->> x bufiles/gen-name-seq second ntseq2aaseq)
+      ysq (->> y bufiles/gen-name-seq second ntseq2aaseq)
+      xdist (p/probs 6 xsq)
+      ydist (->> test-centers make-hybrids vals
+                 (filter #(->> % :members
+                               (some (fn[m]
+                                       (= (member->locus m) "SP_RS05675")))))
+                 first :dists first)]
+  (it/jensen-shannon xdist ydist))
+
+
+
+
+
+
+
+
+
+
+(def tigrcenter-jsd-dist
+  (->> tigr4-centers
+       #_(filter (fn[[k m]] (-> m :members count (= 1))))
+       vals
+       panclus.stats/compare-clusters))
+
+(->> tigr4-centers vals
+     (filter #(->> % :members
+                   (some (fn[m]
+                           (= (member->locus m) "SP_RS05675")))))
+     first :members)
+#{"NC_003028/1074433-1074849/-1,SP_RS05675" "NC_003028/1921596-1922012/-1,SP_RS10200" "NC_003028/20404-20820/1,SP_RS00105"}
+
+
+(->> (finish-centers test-centers 0.8 1.2) vals
+     (filter #(->> % :members
+                   (some (fn[m]
+                           (= (member->locus m) "SP_RS05675")))))
+     first :members)
+#{"NC_003028/1074433-1074849/-1,SP_RS05675" "NC_003028/319495-319842/-1,SP_RS01685" "NC_003028/275290-275637/1,SP_RS01460" "NC_003028/938452-938799/1,SP_RS04935" "NC_003028/769180-769530/1,SP_RS04005"}
+
+
+(->> test-centers vals
+     (filter #(->> % :members
+                   (some (fn[m]
+                           (= (member->locus m) "SP_RS04005")))))
+     first :members)
+#{"NC_003028/769180-769530/1,SP_RS04005"}
+
+
+(->> tigr4-centers vals
+     (filter #(->> % :members
+                   (some (fn[m]
+                           (= (member->locus m) "SP_RS04005")))))
+     first :members)
+#{"NC_003028/319495-319842/-1,SP_RS01685" "NC_003028/275290-275637/1,SP_RS01460" "NC_003028/938452-938799/1,SP_RS04935" "NC_003028/769180-769530/1,SP_RS04005"}
+
+
+
+
+
+
+
+
+(let [x (time (init-centers (-> reffnas first (gen-strain-dists :ows (ows :aa)))))
+      cnt (->> x vals
+               (filter #(-> % :members count (> 1))) count)
+      jsds (->> x vals
+                (filter #(-> % :members count (> 1)))
+                (mapv #(-> % :jsds))
+                (mapv (fn[pairs] (mapv second pairs))) flatten sort)]
+  [(count x) cnt jsds])
+
+(->> test-centers vals
+     (filter #(-> % :members count (> 1)))
+     (mapv #(-> % :jsds))
+     (mapv (fn[pairs] (mapv second pairs))) flatten sort)
+(->> test-centers vals
+     (filter #(-> % :members count (> 1)))
+     (mapv #(-> % :jsds))
+     (mapv (fn[pairs]
+             (mapv #(->> % first member->entry
+                         bufiles/entry-parts second (apply -)
+                         Math/abs)
+                   pairs))))
+
+
+
+
+
+
+
+
+;;; Transitive reduce
+(def pair-map
+  (->> @center-jsd-dist (sort-by first)
+       (coll/take-until #(-> % first (> 0.4))) #_(take 100)
+       (reduce (fn[M [scr pairs]]
+                 (loop [M M
+                        pairs pairs]
+                   (if (empty? pairs)
+                     M
+                     (let [[pg1 pg2] (first pairs)]
+                       (recur (assoc M
+                                     pg1 (conj (M pg1 []) pg2)
+                                     pg2 (conj (M pg2 []) pg1))
+                              (rest pairs))))))
+               {})
+       #_(filter (fn[[k v]] (> (count v) 1)))
+       (into {})))
+(def testmap pair-map) [(count testmap) (count pair-map)]
+
+
+(def testmap {"PGSP_09338" ["PGSP_02790" "PGSP_10573"], "PGSP_02790" ["PGSP_07438" "PGSP_09338"], "PGSP_05969" ["PGSP_10078" "PGSP_10253"], "PGSP_11067" ["PGSP_02794" "PGSP_08705"], "PGSP_01131" ["PGSP_06498" "PGSP_04354"], "PGSP_07228" ["PGSP_09953" "PGSP_11523"], "PGSP_05005" ["PGSP_03035" "PGSP_00060"], "PGSP_00060" ["PGSP_02303" "PGSP_05005"], "PGSP_07650" ["PGSP_00344" "PGSP_02907"], "PGSP_07193" ["PGSP_00278" "PGSP_09044"], "PGSP_07438" ["PGSP_02790" "PGSP_09237" "PGSP_10146" "PGSP_06341" "PGSP_00891"]})
+
+(->> ["PGSP_02790"]
+     (next-set #{} testmap) first
+     (mapv #(->> (@ref77pg350-fut %) :members))
+     (map count) m/sum)
+
+
+(defn next-set
+  [curset pair-map mems]
+  (loop [mems mems
+         curset curset
+         curmap pair-map]
+    (if (empty? mems)
+      [curset curmap]
+      (let [pgk (first mems)
+            newmems (curmap pgk)
+            nxtmap (dissoc curmap pgk)
+            [newset newmap] (next-set (conj curset pgk) nxtmap newmems)]
+        (recur (rest mems) newset newmap)))))
+
+(defn next-id []
+  (format "PGSP_%05d" (swap! PGSP-index inc)))
+
+(defn tran-reduce
+  [pair-map pgsp-start]
+  (swap! PGSP-index (constantly pgsp-start))
+  (reduce (fn[[M newmap] pgk]
+            (if (not (newmap pgk))
+              [M newmap]
+              (let [[cluset newmap] (next-set #{} newmap [pgk])
+                    clu-id (next-id)]
+                [(assoc M clu-id cluset) newmap])))
+          [{} pair-map] (keys pair-map)))
+
+
+(def merged-sets
+  (->> 13805 (tran-reduce {} testmap) first))
+
+
+
+;;; Remove all pair-map (testmap) elements - result will be merged
+;;; with the new clusters from tran-reduce
+(def ref77pg350-minus
+  (->> testmap keys (apply dissoc @ref77pg350-fut)))
+
+
+
+(->> merged-sets vals
+     (mapv (fn[s] (->> s (mapv #(->> (@ref77pg350-fut %) :members))
+                      (map count) m/sum)))
+     sort (coll/take-until #(> % 371)) count)
+
+;;; count of new core in merged
+(->> merged-sets vals
+     (mapv (fn[s] (->> s (mapv #(->> (@ref77pg350-fut %) :members))
+                      (map count) m/sum)))
+     sort (filter #(= % 371)) count)
+
+;;; Singletons count that are removed by merging
+(->> pair-map keys (mapv #(->> (@ref77pg350-fut %) :members count))
+     (filter #(= % 1)) count)
+
+
+
+
+
+
+(defn merged-set->cluster
+  [merged-set clustering & {:keys [ows] :or {ows 6}}]
+  (let [[pgnm pgids] merged-set
+        mems (->> pgids
+                  (mapv #(->> (clustering %) :members))
+                  (apply set/union))
+        mdc-trips (mapv #(let [ent (member->entry %)
+                               [dist cnt] (get-dist-cnt %)]
+                           [% dist cnt])
+                        mems)
+        cnt (p/mean (mapv last mdc-trips))
+        Q (it/hybrid-dictionary ows (mapv second mdc-trips))
+        jsds (vfold (fn[[mem P _]] [mem (roundit (it/jensen-shannon P Q))])
+                   mdc-trips)]
+
+    {:center [pgnm cnt Q]
+     :dists [Q]
+     :jsds jsds
+     :cnt {:sm cnt, :d 1, :m cnt}
+     :members mems
+     :name pgnm}))
+
+
+(defn merged-sets->clusters
+  [merged-sets clustering]
+  (reduce (fn[C ms]
+            (let [clu (merged-set->cluster ms clustering)]
+              (assoc C (clu :name) clu)))
+          {} merged-sets))
+
+
+(def merged-clusters
+  (merged-sets->clusters merged-sets))
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/full-r77pg350-merged-clusters.clj"
+  (prn merged-clusters))
+
+
+;;; ref77pg350 minus all input clusters to merge plus new merged clusters
+(def ref77pg350-minus
+  (->> testmap keys (apply dissoc @ref77pg350-fut)))
+
+(def ref77-pg350-with-merged-clusters
+  (merge ref77pg350-minus merged-clusters))
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/ref77-pg350-with-merged-clusters.clj"
+  (prn ref77-pg350-with-merged-clusters))
+
+
+
+
+
+
+
+
+
+
+
+
+;;; --- Multiple merges loses too much with transitive closure issue ---------
+;;; --- So, this stuff is obsolete
+
+(def merged-pair-map
+  (->> @center-merged-jsd-dist (sort-by first)
+       (coll/take-until #(-> % first (> 0.4))) #_(take 100)
+       (reduce (fn[M [scr pairs]]
+                 (loop [M M
+                        pairs pairs]
+                   (if (empty? pairs)
+                     M
+                     (let [[pg1 pg2] (first pairs)]
+                       (recur (assoc M
+                                     pg1 (conj (M pg1 []) pg2)
+                                     pg2 (conj (M pg2 []) pg1))
+                              (rest pairs))))))
+               {})
+       #_(filter (fn[[k v]] (> (count v) 1)))
+       (into {})))
+
+(def merged-sets-2
+  (->> 15209 (tran-reduce merged-pair-map) first))
+
+(->> merged-pair-map keys
+     (mapv #(->> (ref77-pg350-with-merged-clusters %) :members count))
+     (filter #(= % 1)) count)
+
+
+(def merged-clusters-2
+  (merged-sets->clusters merged-sets-2 ref77-pg350-with-merged-clusters))
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/full-r77pg350-merged-clusters-2.clj"
+  (prn merged-clusters-2))
+
+(def ref77pg350-merged-minus
+  (->> merged-pair-map keys (apply dissoc ref77-pg350-with-merged-clusters)))
+
+(def ref77-pg350-with-merged-clusters-2
+  (merge ref77pg350-merged-minus merged-clusters-2))
+
+(io/with-out-writer
+  "/store/data/PanClus/Entropy/ref77-pg350-with-merged-clusters-2.clj"
+  (prn ref77-pg350-with-merged-clusters-2))
+;;; --------------------------------------------------------------------------
+
+
+
+
+
+
+
+(->> ref77-pg350-with-merged-clusters
+     clus-jsd-data
+     (keep (fn[m]
+             (let [jsds (m :jsds)
+                   >4 (->> jsds (coll/drop-until #(> % 0.35))
+                           (mapv #(roundit % :places 2)))
+                   mx (roundit (m :mx) :places 2)
+                   mcnt (m :memcnt)
+                   pgnm (m :pgnm)]
+               (when (> mx 0.4)
+                 {:mx mx :>4 (count >4)
+                  :pgnm pgnm :memcnt mcnt}))))
+     (take 2)
+     #_(mapv #(vector (% :memcnt) (% :mx) (-> % :>4 count)))
+     #_(mapv last)
+     #_m/sum)
+
