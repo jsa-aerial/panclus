@@ -758,7 +758,8 @@
          (constantly
           (->> #_@ref77pg350-fut
                #_ref77-pg350-with-merged-clusters
-               current-merged-clustering
+               jsa-merged-clustering
+               #_current-merged-clustering
                keys sort last (str/split #"_") second Integer.)))
 ;;; Make sure PGSP-index is correct for this!!
 (def next-merged-sets
@@ -800,16 +801,6 @@
        count))
 
 
-(let [xkeys (->> (center-dist->pair-map
-                  @center-current-merged-jsd-dist 0.6 :dir :above)
-                 (set/intersection (-> pair-map keys set))
-                 (mapcat #(conj (pair-map %) %))
-                 (into #{}))
-      m (center-dist->pair-map @center-current-merged-jsd-dist 0.6 :dir :above)]
-  (->> xkeys (mapcat #(m %)) (into #{})
-       (set/intersection (-> current-merged-clustering keys set))
-       count))
-
 
 (def center-current-merged-jsd-dist ; current is for 0.39
   (let [center-jsd-dist @center-current-merged-jsd-dist
@@ -825,30 +816,36 @@
                  (into {})
                  vals
                  compare-clusters))))
-(def jsa
-  (time (let [xkeys (->> (center-dist->pair-map
-                          @center-current-merged-jsd-dist 0.6 :dir :above)
-                         (set/intersection (-> pair-map keys set))
-                         (mapcat #(conj (pair-map %) %))
-                         (into #{}))
-              m (center-dist->pair-map
-                 @center-current-merged-jsd-dist 0.6 :dir :above)]
-          (->> xkeys (mapcat #(m %)) (into #{})
-               (set/intersection (-> current-merged-clustering keys set))
-               (set/union
-                (let [center-jsd-dist @center-current-merged-jsd-dist
-                      new-keys (-> next-merged-clusters keys set)
-                      cur-keys (-> current-merged-clustering keys set)]
-                  (->> center-jsd-dist (sort-by first)
-                       (coll/drop-until #(-> % first (> 0.6)))
-                       (mapcat (fn[[scr members]] (mapcat identity members)))
-                       (into #{})
-                       (set/difference cur-keys)
-                       )))
-               (mapv #(vector % (current-merged-clustering %)))
-               (into {})
-               vals
-               compare-clusters))))
+
+(def jsa (concat (center-distances (@DBG :current-merged-clustering)
+                                   (@DBG :next-merged-clusters)
+                                   @center-current-merged-jsd-dist
+                                   0.6)
+                 (->> @center-current-merged-jsd-dist
+                      (sort-by first)
+                      (coll/drop-until #(-> % first (> 0.6))))))
+
+(def jsa-merged-clustering
+  (let [pair-map (center-dist->pair-map jsa 0.4)]
+    (->> pair-map
+         (cur->next-merged-clusters current-merged-clustering @PGSP-index)
+         (cur->next-clustering current-merged-clustering pair-map))))
+
+(def jsa2 (concat (center-distances (@DBG :current-merged-clustering)
+                                    (@DBG :next-merged-clusters)
+                                    jsa
+                                    0.6)
+                  (->> jsa
+                       (sort-by first)
+                       (coll/drop-until #(-> % first (> 0.6))))))
+
+(def jsa2-merged-clustering
+  (let [pair-map (center-dist->pair-map jsa2 0.4)]
+    (->> pair-map
+         (cur->next-merged-clusters jsa-merged-clustering @PGSP-index)
+         (cur->next-clustering jsa-merged-clustering pair-map))))
+
+
 
 (io/with-out-writer
   "/store/data/PanClus/Stats/current-merged-39-distance-data.clj"
@@ -867,7 +864,7 @@
       (into #{}) ; count) ; 0.9 66%, 0.6 80%, 0.5 87% 0.4 95%
       (set/intersection (-> current-merged-clustering keys set))
       count)
- (->> jsa2 (sort-by first)
+ (->> jsa (sort-by first)
       (mapcat (fn[[scr members]] (mapcat identity members)))
       (into #{}) count))
 
