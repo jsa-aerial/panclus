@@ -18,15 +18,29 @@
 
    [panclus.params :as pams]
    [panclus.clustering
-    :refer [member->entry
+    :refer :all
+            #_[member->entry
             member->strain
             member->locus
+            member->sq
+            member->dist
+            member->clus-input
             ntseq2aaseq
+            id-line->member
             roundit
             PGSP-index
             make-hybrids
-            ref77-SP-clusters
-            ref77+PG30-SP-clusters
+            get-dist-cnt
+            get-dist
+            running-mean
+            run-strain-clustering
+            pair-jsd
+            next-set
+            tran-reduce
+            merged-set->cluster
+            merged-sets->clusters
+            #_ref77-SP-clusters
+            #_ref77+PG30-SP-clusters
             ref77pg350-fut
             ]]]
   )
@@ -40,6 +54,7 @@
        vals
        (mapv (fn[m]
                (let [jsds (->> m :jsds (sort-by second) (mapv second))
+                     outjsds (->> m :outjsds)
                      memcnt (->> m :members count)
                      pgnm (m :name)
                      mjsd (p/mean jsds)
@@ -54,6 +69,7 @@
                   :mean mjsd :mx mxjsd :var vjsd :sdev stdjsd
                   :-1sdev n1sdev :+1sdev p1sdev
                   :jsds jsds
+                  :outjsds outjsds
                   :within-1sdev sdev-jsds
                   :less+1sdev less+1sdev-jsds})))))
 
@@ -83,12 +99,9 @@
 (clus-counts @ref77pg350-fut :sdev-grp :less+1sdev :cut% 0.8)
 (clus-counts @ref77pg350-fut :sdev-grp :within-1sdev :cut% 0.8)
 
-(clus-counts ref77-pg350-with-merged-clusters :sdev-grp :less+1sdev :cut% 0.8)
-(clus-counts ref77-pg350-with-merged-clusters :sdev-grp :within-1sdev :cut% 0.8)
-
-(clus-counts ref77-pg350-with-merged-clusters-2
-             :sdev-grp :less+1sdev :cut% 0.8)
-(clus-counts ref77-pg350-with-merged-clusters-2
+(clus-counts (@DBG :current-merged-clustering)
+             :sdev-grp :less+1sdev :cut% 0.8) ; 89%
+(clus-counts (@DBG :current-merged-clustering) ; 65%
              :sdev-grp :within-1sdev :cut% 0.8)
 
 
@@ -156,15 +169,7 @@
 
 (io/with-out-writer
   "/store/data/PanClus/Stats/ref77-pg350-merged-clustering-dist.clj"
-  (prn (->> ref77-pg350-with-merged-clusters vals
-            (group-by #(count (% :members)))
-            (map (fn[[k m]] [k (count m)]))
-            (sort-by first)
-            (mapv (fn[[sz ct]] {:sz sz :cnt ct})))))
-
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-clustering-2-dist.clj"
-  (prn (->> ref77-pg350-with-merged-clusters-2 vals
+  (prn (->> (@DBG :current-merged-clustering) vals
             (group-by #(count (% :members)))
             (map (fn[[k m]] [k (count m)]))
             (sort-by first)
@@ -209,16 +214,6 @@
             (map (fn[[k m]] [k (count m)]))
             (sort-by first)
             (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))))
-
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-2-clus-radii.clj"
-  (prn (->> ref77-pg350-with-merged-clusters-2
-            clus-jsd-data
-            (group-by #(-> % :mean (roundit :places 2)))
-            (map (fn[[k m]] [k (count m)]))
-            (sort-by first)
-            (mapv (fn[[jsd ct]] {:jsd jsd :cnt ct})))))
-
 
 
 
@@ -269,17 +264,7 @@
             #_(mapv :cnt)
             #_m/sum))) ==> 86% <= .3
 
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-2-max-outliers.clj"
-  (prn (->> ref77-pg350-with-merged-clusters-2
-            clus-jsd-data
-            (group-by #(-> % :mx (roundit :places 2)))
-            (map (fn[[k m]] [k (count m)]))
-            (sort-by first)
-            (mapv (fn[[mx ct]] {:mx mx :cnt ct}))
-            #_(filter #(<= (% :mx) 0.3))
-            #_(mapv :cnt)
-            #_m/sum))) ==> 86% <= .3
+;; ==> 86% <= .3 / 99% <= .4 (54 > .4)
 
 
 
@@ -319,14 +304,6 @@
             (group-by #(-> % second))
             (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
 
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-2-jsd-sdevs.clj"
-  (prn (->> (clus-jsd-data ref77-pg350-with-merged-clusters-2 :cnt 1)
-            (mapv #(vector (-> % :mean roundit) (-> % :sdev roundit)))
-            (sort-by second)
-            (group-by #(-> % second))
-            (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
-
 
 
 (io/with-out-writer
@@ -347,16 +324,17 @@
             #_(coll/drop-until #(-> % second (> 0.1)))
             (group-by #(-> % second))
             (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
-
 (io/with-out-writer
-  "/store/data/PanClus/Stats/cluster-jsd-sdevs-372-plus.clj"
-  (prn (->> (clus-jsd-data @ref77pg350-fut :cnt 371)
-            #_(filter #(< (-> % :jsds count) 372))
+  "/store/data/PanClus/Stats/last-merged-jsd-sdevs-371-only.clj"
+  (prn (->> (clus-jsd-data ref77-pg350-with-merged-clusters :cnt 370)
+            (filter #(< (-> % :jsds count) 372))
             (mapv #(vector (-> % :mean roundit) (-> % :sdev roundit)))
             (sort-by second)
             #_(coll/drop-until #(-> % second (> 0.1)))
             (group-by #(-> % second))
             (mapv (fn[[sdev v]] {:sdev sdev :cnt (count v)})))))
+
+
 
 
 
@@ -390,12 +368,7 @@
                                           :sdev-grp :within-1sdev :cut% %)))
             (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))))
 
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-2-percent-clusters-1stdev.clj"
-  (prn (->> (range 0.1 0.9 0.1) (map roundit)
-            (mapv #(vector % (clus-counts ref77-pg350-with-merged-clusters-2
-                                          :sdev-grp :within-1sdev :cut% %)))
-            (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))))
+
 
 
 
@@ -429,12 +402,6 @@
                                           :sdev-grp :less+1sdev :cut% %)))
             (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))))
 
-(io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-merged-2-percent-clusters-less+1stdev.clj"
-  (prn (->> (range 0.1 0.9 0.1) (map roundit)
-            (mapv #(vector % (clus-counts ref77-pg350-with-merged-clusters-2
-                                          :sdev-grp :less+1sdev :cut% %)))
-            (mapv (fn[[per [cnt cper]]] {:cut per :cnt cnt :per cper})))))
 
 
 
@@ -472,17 +439,17 @@
 
 (defn next-point-dist [clusters mode]
   (if (= mode :center-center)
-    (-> clusters first :center last)
+    (-> clusters first last)
     (assert :NYI "only :center-center supported at this point")))
 
 (defn compare-clusters [clusters & {:keys [mode] :or {mode :center-center}}]
   (loop [comp-dist {}
-         clusters clusters]
+         clusters (mapv #(vector (% :name) (-> % :center last)) clusters)]
     (if (empty? (rest clusters))
       comp-dist
       (let [P (next-point-dist clusters mode)
-            Pnm (-> clusters first :name)
-            dists (mapv  #(vector (% :name)(-> % :center last)) (rest clusters))
+            Pnm (-> clusters first first)
+            dists (rest clusters)
             [Qnm score] (->> dists
                              (vfold (fn[[nm Q]]
                                       [nm (roundit (it/jensen-shannon P Q))]))
@@ -577,7 +544,6 @@
 
 
 
-
 (def center-merged-jsd-dist
   (future (->> ref77-pg350-with-merged-clusters
                #_(filter (fn[[k m]] (-> m :members count (> 1))))
@@ -585,11 +551,11 @@
                compare-clusters)))
 
 (io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-center-merged-distance-data.clj"
+  "/store/data/PanClus/Stats/ref77-pg350-center-merged-31-distance-data.clj"
   (prn @center-merged-jsd-dist))
 
 (io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-center-merged-distance-dist.clj"
+  "/store/data/PanClus/Stats/ref77-pg350-center-merged-31-distance-dist.clj"
   (prn (->> @center-merged-jsd-dist (sort-by first)
             (mapv (fn[[jsd members]] {:jsd jsd :cnt (count members)})))))
 
@@ -600,27 +566,54 @@
 
 
 
-(def center-merged-2-jsd-dist
-  (future (->> ref77-pg350-with-merged-clusters-2
+
+
+;;; Merged cleaned center distances
+(def center-merged-cleaned-jsd-dist
+  (future (->> ref77-pg350-with-merged-clusters-cleaned
                #_(filter (fn[[k m]] (-> m :members count (> 1))))
                vals
                compare-clusters)))
 
 (io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-center-merged-2-distance-data.clj"
-  (prn @center-merged-2-jsd-dist))
+  (-> (pams/get-params :panclus-base)
+      (fs/join "Stats/ref77-pg350-center-merged-distance-data.clj"))
+  (prn #_@center-merged-cleaned-jsd-dist
+       last-merged-jsd-dist))
 
 (io/with-out-writer
-  "/store/data/PanClus/Stats/ref77-pg350-center-merged-2-distance-dist.clj"
-  (prn (->> center-merged-2-jsd-dist (sort-by first)
+  (-> (pams/get-params :panclus-base)
+      (fs/join "Stats/ref77-pg350-center-merged-distance-dist.clj"))
+  (prn (->> #_@center-merged-cleaned-jsd-dist
+            last-merged-jsd-dist
+            (sort-by first)
             (mapv (fn[[jsd members]] {:jsd jsd :cnt (count members)})))))
 
-(def center-merged-2-jsd-dist
+
+
+
+;;; Merged cleaned and leftover recluster center distances
+(def center-merged-cleaned-reclu-jsd-dist
+  (future (->> ref77-pg350-with-merged-clusters-cleaned-reclu
+               #_(filter (fn[[k m]] (-> m :members count (> 1))))
+               vals
+               compare-clusters)))
+
+(io/with-out-writer
+  (-> (pams/get-params :panclus-base)
+    (fs/join "Stats/ref77-pg350-center-merged-cleaned-reclu-distance-data.clj"))
+  (prn @center-merged-cleaned-reclu-jsd-dist))
+
+(io/with-out-writer
+  (-> (pams/get-params :panclus-base)
+    (fs/join "Stats/ref77-pg350-center-merged-cleaned-reclu-distance-dist.clj"))
+  (prn (->> @center-merged-cleaned-reclu-jsd-dist (sort-by first)
+            (mapv (fn[[jsd members]] {:jsd jsd :cnt (count members)})))))
+
+(def center-merged-cleaned-reclu-jsd-dist
   (future
-    (-> "/store/data/PanClus/Stats/ref77-pg350-center-merged-2-distance-data.clj"
+    (-> "/store/data/PanClus/Stats/ref77-pg350-center-merged-cleaned-reclu-distance-data.clj"
         slurp read-string)))
-
-
 
 
 
