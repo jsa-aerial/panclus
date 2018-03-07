@@ -117,6 +117,76 @@
 
 (def ows {:nt 9 :aa 6})
 
+(defn member->entry
+  "Return entry part of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") first))
+
+(defn member->locus
+  "Return locus-tag part of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") second))
+
+(defn member->strain
+  "Return strain part of entry of member id 'member' which is entry,locus-tag"
+  [member]
+  (->> member (str/split #",") first bufiles/entry-parts first))
+
+(defn member->sq
+  "Return the sequence for member id 'member' which is
+  entry,locus-tag. 'aa' indicates whether or not the sq should be the
+  amino acid translation."
+  [member & {:keys [aa] :or {aa true}}]
+  (let [xform (if aa ntseq2aaseq identity)
+        x (member->entry member)
+        genomebase (pams/get-params [:biodb-info :genomes :base])
+        basedir (if (= (str/substring x 0 3) "TVO")
+                  (fs/join genomebase (pams/get-params
+                                       [:biodb-info :genomes :tvoseq02]))
+                  (fs/join genomebase (pams/get-params
+                                       [:biodb-info :genomes :refseq77])))]
+    (->> (bufiles/gen-name-seq x :basedir basedir) second xform)))
+
+(defn member->dist
+  "Return the kmer distribution for member id 'member' which is
+  entry,locus-tag. 'aa' indicates whether or not the sq used should be
+  the ammino acide translation. It also indicates the word size off of
+  var 'ows'"
+  [member & {:keys [aa] :or {aa true}}]
+  (let [sq (member->sq member :aa aa)
+        ws (ows (if aa :aa :nt))]
+    (p/probs ws sq)))
+
+(defn member->clus-input
+  [member {:keys [aa] :or {aa true}}]
+  (let [sq (member->sq member :aa aa)
+        cnt (count sq)
+        dist (p/probs (ows (if aa :aa :nt)) sq)]
+      [member cnt dist]))
+
+
+(defn get-dist-cnt [x & {:keys [aa] :or {aa true}}]
+  (if (map? x)
+    x
+    (let [xsq (member->sq x)
+          xcnt (count xsq)
+          xdist (p/probs (ows (if aa :aa :nt)) xsq)]
+      [xdist xcnt])))
+
+(defn get-dist [x & {:keys [aa] :or {aa true}}]
+  (if (map? x)
+    x
+    (let [[dist cnt] (get-dist-cnt x :aa aa)]
+      dist)))
+
+
+(defn id-line->member
+  [idl]
+  (let [[ent & x] (->> idl (str/split #","))
+        lt (->> x (coll/partitionv-all 2) (into {})
+                (#(% "locus_tag")))]
+    (str ent "," lt)))
+
 (defn gen-sqs-dists
   "Generate the kmer distributions for each sq in 'sqs', where sq is
   the pair [entry ntsq] 'ows' is the optimal word size (from cre) and
@@ -141,10 +211,13 @@
   where 'ent' is the entry defining the loci, 'len' is the length of
   the sq, and 'dist' is the probability distribution."
   [strain-fna & {:keys [aa ows] :or {aa false ows 9}}]
-  (let [name-seq-pairs (bufiles/read-seqs strain-fna :info :both)]
-    (gen-sqs-dists
-     (sort-by second (fn[l r] (< (count l) (count r))) name-seq-pairs)
-     :aa aa :ows ows)))
+  (if (string? strain-fna)
+    (let [name-seq-pairs (bufiles/read-seqs strain-fna :info :both)]
+      (gen-sqs-dists
+       (sort-by second (fn[l r] (< (count l) (count r))) name-seq-pairs)
+       :aa aa :ows ows))
+    (vfold member->clus-input
+           strain-fna)))
 
 (defn gen-strain-group-dists
   "Take a set of fastas 'strain-fnas', and perform 'gen-strain-dists'
@@ -167,23 +240,6 @@
   gen-strain-dists) and returns a map grouping these by 'ent'"
   [dists]
   (reduce (fn[M [n cnt P :as v]] (assoc M n v)) {} dists))
-
-(defn member->entry
-  "Return entry part of member id 'member' which is entry,locus-tag"
-  [member]
-  (->> member (str/split #",") first))
-
-(defn member->locus
-  "Return locus-tag part of member id 'member' which is entry,locus-tag"
-  [member]
-  (->> member (str/split #",") second))
-
-(defn member->strain
-  "Return strain part of entry of member id 'member' which is entry,locus-tag"
-  [member]
-  (->> member (str/split #",") first bufiles/entry-parts first))
-
-
 
 
 (comment
@@ -590,34 +646,31 @@
                  (merge-clusters chunk-clusters leftover-clus)))))))
 
 
-
-
-(defn get-dist-cnt [x & {:keys [AA] :or {AA true}}]
-  (if (map? x)
-    x
-    (let [xform (if AA ntseq2aaseq identity)
-          x (member->entry x)
-          genomebase (pams/get-params [:biodb-info :genomes :base])
-          basedir (if (= (str/substring x 0 3) "TVO")
-                    (fs/join genomebase (pams/get-params
-                                         [:biodb-info :genomes :tvoseq02]))
-                    (fs/join genomebase (pams/get-params
-                                         [:biodb-info :genomes :refseq77])))
-          xsq (->> (bufiles/gen-name-seq x :basedir basedir)
-                   second xform)
-          xcnt (count xsq)
-          xdist (p/probs 6 xsq)]
-      [xdist xcnt])))
-
-(defn get-dist [x & {:keys [AA] :or {AA true}}]
-  (let [[dist cnt] (get-dist-cnt x :AA AA)]
-    dist))
-
-(defn pair-jsd [x y & {:keys [AA] :or {AA true}}]
-  (let [xdist (get-dist x :AA AA)
-        ydist (get-dist y :AA AA)]
+(defn pair-jsd [x y & {:keys [aa] :or {aa true}}]
+  (let [xdist (get-dist x :aa aa)
+        ydist (get-dist y :aa aa)]
     (it/jensen-shannon xdist ydist)))
 
+
+
+
+(defn center-dist->pair-map
+  [center-dist jsdct & {:keys [dir] :or {dir :below}}]
+  (let [func (if (= dir :below) coll/take-until coll/drop-until)]
+    (->> center-dist
+         (sort-by first)
+         (func #(-> % first (> jsdct)))
+         (reduce (fn[M [scr pairs]]
+                   (loop [M M
+                          pairs pairs]
+                     (if (empty? pairs)
+                       M
+                       (let [[pg1 pg2] (first pairs)]
+                         (recur (assoc M
+                                       pg1 (conj (M pg1 []) pg2)
+                                       pg2 (conj (M pg2 []) pg1))
+                                (rest pairs))))))
+                 {}))))
 
 (defn next-set
   "Transitive merge set computation. 'curset' is the current total set
@@ -668,32 +721,123 @@
         mems (->> pgids
                   (mapv #(->> (clustering %) :members))
                   (apply set/union))
+
+        oldoutjsds (->> pgids
+                     (mapv #(->> (clustering %) :outjsds))
+                     (apply coll/concatv))
+        oldjsds (->> pgids
+                     (mapv #(->> (clustering %) :jsds))
+                     (mapv #(sort-by second %)))
+        bestjsds (mapv first oldjsds)
+        bestdists (mapv #(-> % first member->dist) bestjsds)
+        centroid (it/hybrid-dictionary ows bestdists)
+
         mdc-trips (mapv #(let [ent (member->entry %)
                                [dist cnt] (get-dist-cnt %)]
                            [% dist cnt])
                         mems)
-        cnt (p/mean (mapv last mdc-trips))
-        Q (it/hybrid-dictionary ows (mapv second mdc-trips))
-        jsds (vfold (fn[[mem P _]] [mem (roundit (it/jensen-shannon P Q))])
+        jsds (->> mdc-trips
+                  (mapv (fn[[mem P _]]
+                          [mem (roundit (it/jensen-shannon P centroid))]))
+                  (sort-by second))
+        outjsds (coll/drop-until #(-> % second (>= 0.31)) jsds)
+        jsds (take-while #(-> % second (< 0.31)) jsds)
+        gdmems (->> jsds (mapv first) (into #{}))
+        mdc-trips (filter #(-> % first gdmems) mdc-trips)
+
+        cnt (->> mdc-trips (mapv last) p/mean)
+        Q (->> mdc-trips (mapv second) (it/hybrid-dictionary ows))
+
+        jsds (mapv (fn[[mem P _]] [mem (roundit (it/jensen-shannon P Q))])
                    mdc-trips)]
 
     {:center [pgnm cnt Q]
      :dists [Q]
      :jsds jsds
+     :outjsds (coll/concatv outjsds oldoutjsds)
      :cnt {:sm cnt, :d 1, :m cnt}
-     :members mems
+     :members gdmems
      :name pgnm}))
 
 (defn merged-sets->clusters
-  [merged-sets]
-  (reduce (fn[C ms]
-            (let [clu (merged-set->cluster ms)]
-              (assoc C (clu :name) clu)))
-          {} merged-sets))
+  [merged-sets clustering]
+  (->> merged-sets
+       (vfold (fn[ms]
+                (let [clu (merged-set->cluster ms clustering)]
+                  [(clu :name) clu])))
+       (into {})))
 
 
+(def DBG (atom {}))
+
+(defn cur->next-merged-clusters
+  [cur-clusters pgsp-start pair-map]
+  (let [next-merged-sets (-> pair-map
+                             (tran-reduce pgsp-start) first)
+        next-merged-clusters (merged-sets->clusters
+                              next-merged-sets cur-clusters)]
+    (swap! DBG (fn[m] (assoc m :next-merged-sets next-merged-sets
+                              :next-merged-clusters next-merged-clusters)))
+    next-merged-clusters))
+
+(defn cur->next-clustering
+  [cur-clusters pair-map next-merged-clusters]
+  (let [cur-clus-minus (->> pair-map keys (apply dissoc cur-clusters))
+        cur-merged-clus (merge cur-clus-minus next-merged-clusters)]
+    (swap! DBG
+           (fn[m] (assoc m :current-clustering-minus cur-clus-minus
+                          :current-merged-clustering cur-merged-clus)))
+    cur-merged-clus))
 
 
+(defn next-point-dist [clusters mode]
+  (if (= mode :center-center)
+    (-> clusters first last)
+    (assert :NYI "only :center-center supported at this point")))
+
+(defn compare-clusters [clusters & {:keys [mode] :or {mode :center-center}}]
+  (loop [comp-dist {}
+         clusters (mapv #(vector (% :name) (-> % :center last)) clusters)]
+    (if (empty? (rest clusters))
+      comp-dist
+      (let [P (next-point-dist clusters mode)
+            Pnm (-> clusters first first)
+            dists (rest clusters)
+            [Qnm score] (->> dists
+                             (vfold (fn[[nm Q]]
+                                      [nm (roundit (it/jensen-shannon P Q))]))
+                             (sort-by second) first)]
+        (println (format "(count clusters): %s" (count clusters)))
+        (recur (assoc comp-dist score
+                      (conj (get comp-dist score []) [Pnm Qnm]))
+               (rest clusters))))))
+
+(defn center-distances
+  [cur-clusters next-merged-clusters cur-center-distances jsdct]
+  (let [center-jsd-dist cur-center-distances
+        new-keys (-> next-merged-clusters keys set)
+        cur-keys (-> cur-clusters keys set)]
+    (->> center-jsd-dist (sort-by first)
+         (coll/drop-until #(-> % first (> jsdct)))
+         (mapcat (fn[[scr members]] (mapcat identity members)))
+         (into #{})
+         (set/difference cur-keys)
+         (mapv #(vector % (cur-clusters %)))
+         (into {})
+         vals
+         compare-clusters)))
+
+
+(defn cur-members-from-distances
+  [cur-center-distances pair-map jsdct]
+  (let [above-jsdct (->> cur-center-distances
+                         (sort-by first)
+                         (coll/drop-until #(-> % first (> jsdct)))
+                         (mapcat (fn[[scr members]] (mapcat identity members)))
+                         (into #{})
+                         (set/intersection (-> pair-map keys set))
+                         (mapcat #(conj (pair-map %) %))
+                         (into #{}))]))
 
 (comment
 
