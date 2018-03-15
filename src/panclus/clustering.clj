@@ -158,7 +158,7 @@
     (p/probs ws sq)))
 
 (defn member->clus-input
-  [member {:keys [aa] :or {aa true}}]
+  [member & {:keys [aa] :or {aa true}}]
   (let [sq (member->sq member :aa aa)
         cnt (count sq)
         dist (p/probs (ows (if aa :aa :nt)) sq)]
@@ -412,7 +412,7 @@
 
 (defn init-centers
   ""
-  [dists & {:keys [%-max clus] :or {%-max 0.8}}]
+  [dists & {:keys [%-max clus] :or {%-max 0.4}}]
   (let [ndists (gen-nm-dists-map dists)
         %-max+ (->> %-max (- 1.0) (+ 1.0) double)]
     (loop [ndists ndists
@@ -845,12 +845,12 @@
 (def tigr4-centers
   (init-clusters (-> reffnas first (gen-strain-dists :ows (ows :aa))) 0))
 
-(io/with-out-writer "/store/data/PanClus/Entropy/tigr4-centers.clj"
+(io/with-out-writer "/store/data/PanClus/Data/tigr4-centers.clj"
   (prn tigr4-centers))
 
 (def tigr4-centers
   (-> (pams/get-params :panclus-base)
-      (fs/join "Entropy/tigr4-centers.clj")
+      (fs/join "Data/tigr4-centers.clj")
       slurp read-string))
 
 
@@ -869,7 +869,7 @@
 
 (def ref77-SP-clusters @ref77-SP-clusters)
 
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77-SP-clusters.clj"
+(io/with-out-writer "/store/data/PanClus/Data/ref77-SP-clusters.clj"
   (prn ref77-SP-clusters))
 
 (def ref77-SP-clusters
@@ -893,12 +893,12 @@
 
 (def ref77+PG30-SP-clusters @ref77+PG30-SP-clusters)
 
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77+PG30-SP-clusters.clj"
+(io/with-out-writer "/store/data/PanClus/Data/ref77+PG30-SP-clusters.clj"
   (prn ref77+PG30-SP-clusters))
 
 (def ref77+PG30-SP-clusters
   (-> (pams/get-params :panclus-base)
-      (fs/join "Entropy/ref77+PG30-SP-clusters.clj")
+      (fs/join "Data/ref77+PG30-SP-clusters.clj")
       slurp read-string))
 
 (swap! PGSP-index
@@ -913,16 +913,16 @@
   (future (run-strain-clustering
            (pgfnas :pg320)
            ref77+PG30-SP-clusters
-           :pgsp-start @PGSP-index :jsdctpt 0.4 :%-max 0.95
+           :pgsp-start @PGSP-index :jsdctpt 0.4 :%-max 0.4
            :chunk-size 2 :diffcut 0)))
 
-(io/with-out-writer "/store/data/PanClus/Entropy/ref77+PG350-SP-clusters.clj"
+(io/with-out-writer "/store/data/PanClus/Data/ref77+PG350-SP-clusters.clj"
   (prn @ref77pg350-fut))
 
 (def ref77pg350-fut
   (future
     (-> (pams/get-params :panclus-base)
-        (fs/join "Entropy/ref77+PG350-SP-clusters.clj")
+        (fs/join "Data/ref77+PG350-SP-clusters.clj")
         slurp read-string)))
 
 (swap! PGSP-index
