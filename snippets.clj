@@ -1,16 +1,127 @@
+(io/with-out-writer "/store/data/PanClus/Entropy/all-strain-gene-aa-lens.clj"
+  (prn (->> (->> jsa-merged-clustering
+                 (mapcat #(->> % second :jsds))
+                 (mapv first))
+            (concat
+             (->> jsa-merged-clustering
+                  (filter #(->> % second :outjsds))
+                  (mapcat #(->> % second :outjsds))
+                  (mapv first)))
+            (into #{})
+            (vfold #(vector % (-> % member->sq count)))
+            (into {}))))
 
 
 
 
+(def ref77pg350-clus2rm #_ref77pg30-clus2rm #_ref77clus2rm
+  (->>  #_ref77-center-jsd-dist
+        #_panclus.stats/ref77-center-jsd-dist-new
+        #_ref77+pg30-center-jsd-dist
+        #_ref77+pg30-center-jsd-dist-new
+        ref77+pg350-center-jsd-dist
+        (sort-by first)
+        (coll/take-until #(-> % first (> 0.3)))
+        (mapv (fn[[scr pairs]]
+                (let [clustering
+                      #_ref77-SP-clusters
+                      #_ref77-SP-clusters-new
+                      #_ref77+PG30-SP-clusters
+                      #_ref77+PG30-SP-clusters-new
+                      ref77pg350-SP-clusters
+                      ]
+                  [scr (mapv
+                        (fn[pair]
+                          (let [clus (mapv #(clustering %) pair)
+                                nms (mapv #(% :name) clus)
+                                mems (mapv #(% :members)
+                                           clus)
+                                memcnt (mapv count mems)
+                                lens (->> clus
+                                          (mapv #(-> % :center second
+                                                     (roundit :places 1)))
+                                          sort)]
+                            {:nms nms
+                             :mcnt memcnt :smcnt (m/sum memcnt)
+                             :lens lens
+                             :lenratio (-> (apply / lens) double
+                                           (roundit :places 2))
+                             :mems mems}))
+                        pairs)])))
+        (mapcat (fn[[scr pairs]]
+                  (mapcat (fn[m] (m :nms))
+                          pairs)))
+        (into #{})))
+
+(map count [ref77-SP-clusters-new ref77-SP-clusters-minus
+            ref77clus2rm ref77clus2rm-mems])
+
+(def ref77clus2rm-mems
+  (mapcat #(-> % ref77-SP-clusters-new :members) ref77clus2rm))
+(def ref77-SP-clusters-minus
+  (apply dissoc ref77-SP-clusters-new ref77clus2rm))
+
+(let [[mems clu-minus cluids] (next-pass-data-sets
+                               ref77-SP-clusters 
+                               ref77-center-jsd-dist 0.3)]
+  (def ref77-SP-clusters-new
+    (future (run-strain-clustering
+             [mems]
+             clu-minus
+             :pgsp-start @PGSP-index :jsdctpt 0.3
+             :%-max 0.05 :final-%-max 0.02
+             :chunk-size 2 :diffcut 0))))
+
+
+
+(map count [ref77+PG30-SP-clusters  ref77+PG30-SP-clusters-minus
+            ref77pg30-clus2rm ref77pg30-clus2rm-mems])
+
+(def ref77pg30-clus2rm-mems
+  (mapcat #(-> % ref77+PG30-SP-clusters-new :members) ref77pg30-clus2rm))
+(def ref77+PG30-SP-clusters-minus
+  (apply dissoc ref77+PG30-SP-clusters-new ref77pg30-clus2rm))
+(def ref77+PG30-SP-clusters-new
+  (future (run-strain-clustering
+           [ref77pg30-clus2rm-mems]
+           ref77+PG30-SP-clusters-minus
+           :pgsp-start @PGSP-index :jsdctpt 0.3
+           ;; Note that for first run 0.02 for %-max
+           :%-max 0.4 :final-%-max 0.02
+           :chunk-size 2 :diffcut 0)))
+
+(io/with-out-writer "/store/data/PanClus/Data/ref77+PG30-SP-clusters-2.clj"
+  (prn ref77+PG30-SP-clusters-new))
+
+(def ref77+pg30-center-jsd-dist-new
+  (future (->> ref77+PG30-SP-clusters-new
+               #_(filter (fn[[k m]] (-> m :members count (> 1))))
+               vals
+               compare-clusters)))
+(io/with-out-writer
+  "/store/data/PanClus/Stats/ref77-pg30-new-center-distance-data.clj"
+  (prn ref77+pg30-center-jsd-dist-new))
+(io/with-out-writer
+  "/store/data/PanClus/Stats/ref77-pg30-new-center-distance-dist.clj"
+  (prn (->> ref77+pg30-center-jsd-dist-new (sort-by first)
+            (mapv (fn[[jsd members]] {:jsd jsd :cnt (count members)})))))
+
+;;; pairwise size for %-max on new runs
+(->> "PGSP_02179" ref77+PG30-SP-clusters-new
+     :members
+     (mapv #(vector % (-> % member->sq count)))
+     (sort-by second)
+     clojure.pprint/pprint)
 
 
 
 
+;;; Species stuff...
+(->> species-clusters
+     vals
+     (filter #(-> % :members count (> 1)))
+     (map #(-> % :members count)))
 
-(->> [0.0 0.0 0.0 0.08275862068965517 0.041379310344827586 0.061867002004219476 0.023694766090896352 0.042219863173742475 0.04877188529218581 0.02108631601148583 0.02108631601148583 0.00629546440276047 0.00629546440276047 0.0020328943285097666 0.043413978422945886 0.008568853176403277 0.0474951282943184 0.010548057934976188 0.010548057934976188 0.04462949697842543 0.003250120937211874]
-     (mapv #(roundit % :places 2))
-     (group-by identity)
-     (mapv (fn[[k v]] {:x k :y (count v)})))
 
 
 (->> (clus-jsd-data @ref77pg350-fut :cnt 370)
@@ -369,6 +480,14 @@
         pgsp-2790))
 
 
+;;; Find member cluster, compute lengths of members
+(->> ref77+PG30-SP-clusters-new vals
+     (filter (fn[m] ((m :members) "NC_003028/1678222-1682844/1,SP_RS11500")))
+     first :members sort
+     (mapv #(vector % (-> % member->sq count)))
+     clojure.pprint/pprint)
+
+
 (io/with-out-writer
   (fs/join (pams/get-params :panclus-base)
            "Entropy/TVO_1902148-SPS229_28830-word-dist.clj")
@@ -380,3 +499,33 @@
            "Entropy/NC_012466-SPJ_RS08290-word-dist.clj")
   (prn (->> (member->dist "NC_012466/1593278-1599985/1,SPJ_RS08290")
             (filter #(-> % second (> 0.00099))) (sort-by first) vec)))
+
+
+(let [tvo (member->sq "TVO_1902148/2093373-2093873/1,SPS229_28830")
+      nc  (member->sq "NC_012466/1593278-1599985/1,SPJ_RS08290")]
+  [(count tvo) (count nc)
+   (pair-jsd "TVO_1902148/2093373-2093873/1,SPS229_28830"
+             "NC_012466/1593278-1599985/1,SPJ_RS08290")
+   (aln/align nc tvo :match 1 :mmatch -1 :kind :local )])
+
+
+"NC_003028/1678222-1682844/1,SP_RS11500"
+"NC_003028/1685971-1690224/1,SP_RS11505"
+
+
+
+
+(let [aa (member->sq "NC_012466/1593278-1599985/1,SPJ_RS08290")
+      nt (member->sq "NC_012466/1593278-1599985/1,SPJ_RS08290" :aa false)
+      dfn (fn[sq sz nm] (->> sq (p/probs sz) (mapv (fn[[k p]] [k (roundit p)]))
+                            (into {}) (#(assoc % :kind nm))))]
+  (io/with-out-writer
+    (fs/join (pams/get-params :panclus-base)
+             "Data/NC_012466-SPJ_RS08290-nt-aa-dists.clj")
+    (prn [(dfn nt 1 :nt1) (dfn nt 2 :nt2) (dfn aa 1 :aa)])))
+
+(let [aa (member->sq "TVO_1902148/2093373-2093873/1,SPS229_28830")
+      nt (member->sq "TVO_1902148/2093373-2093873/1,SPS229_28830" :aa false)
+      dfn (fn[sq sz nm] (->> sq (p/probs sz) (mapv (fn[[k p]] [k (roundit p)]))
+                            (into {}) (#(assoc % :kind nm))))]
+  [(dfn nt 1 :nt1) (dfn nt 2 :nt2) (dfn aa 1 :aa)])
