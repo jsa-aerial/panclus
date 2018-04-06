@@ -37,6 +37,8 @@
 ;;; from original db querys
 
 ;;; (separate-strains "orig-db-genes-locus-tags-pg320.csv" "PG/PG320")
+;;; (separate-strains "refseq77-genes-locus-tags-t4-pa-ab-ec.csv"
+;;;                   "RefSeq77/Xspecies")
 (defn separate-strains [orig-db-csv strain-dir]
   (letio [id-nm-map {"17" "locus_tag", "23" "protein_id",
                      "32" "gene", "47" "old_locus_tag"}
@@ -62,13 +64,14 @@
         (.close ot)))))
 
 ;;; Generate fastas from above generated CSVs
-;;; (future  (gen-strain-fastas "PG/PG320"))
-(defn gen-strain-fastas [strain-dir]
+;;; (future  (gen-strain-fastas "PG/PG320" :tvoseq02))
+;;; (gen-strain-fastas "RefSeq77/Xspecies" :refseq77)
+(defn gen-strain-fastas [strain-dir db]
   (let [base panclus-base
         strainbase (fs/join base strain-dir)
         tags ["gene" "old_locus_tag" "locus_tag" "protein_id"]
         csvs (fs/re-directory-files (fs/join strainbase "CSV") "*.csv")
-        dbresolver (aerial.bio.utils.params/get-params [:genomes :tvoseq02])]
+        dbresolver (aerial.bio.utils.params/get-params [:genomes db])]
     (aerial.bio.utils.params/with-genome-db dbresolver
       (doseq [csv (sort csvs)]
         (letio [nc (->> csv fs/basename (str/split #"\.") first)
@@ -88,6 +91,11 @@
                 (println (-> entry aerial.bio.utils.files/gen-name-seq second
                              aerial.bio.utils.seqxform/ntseq->aaseq))))))))))
 
+
+;;; T4, Pseudomonas, Ecoli blessed, Ecoli old, Abuaumanii
+(def species-fnas
+  (->> (fs/glob (fs/join panclus-base "RefSeq77/Xspecies/N*.fna"))
+       sort vec))
 
 (def pgfnas
   (let [pg30fnas  (->> (fs/glob (fs/join panclus-base "PG/PG30/T*.fna"))
@@ -115,7 +123,7 @@
     (sqx/ntseq->aaseq s)))
 
 
-(def ows {:nt 9 :aa 6})
+(def ^:dynamic ows {:nt 9 :aa 6})
 
 (defn member->entry
   "Return entry part of member id 'member' which is entry,locus-tag"
@@ -163,6 +171,12 @@
         cnt (count sq)
         dist (p/probs (ows (if aa :aa :nt)) sq)]
       [member cnt dist]))
+
+
+(defn pair-jsd [x y & {:keys [aa] :or {aa true}}]
+  (let [xdist (get-dist x :aa aa)
+        ydist (get-dist y :aa aa)]
+    (it/jensen-shannon xdist ydist)))
 
 
 (defn get-dist-cnt [x & {:keys [aa] :or {aa true}}]
@@ -335,7 +349,7 @@
   [ds P]
   (->> ds
        (vfold (fn[[n cnt Q]]
-                [n (roundit (it/jensen-shannon P Q)) cnt Q]))
+                [n (roundit (it/jensen-shannon P Q) :places 2) cnt Q]))
        (sort-by second)
        first))
 
@@ -354,7 +368,7 @@
   "Transform the clusters in 'clusters' as obtained from
   'cluster-strains' to have updated information (hybrid) centroid
   distributions suitable for new rounds of clustering."
-  [clusters & {:keys [wz] :or {wz 6}}]
+  [clusters & {:keys [wz] :or {wz (ows :aa)}}]
   (reduce (fn[M clu]
             (let [{:keys [center members dists jsds cnt name]} clu
                   Q (it/hybrid-dictionary wz dists)]
@@ -410,11 +424,27 @@
                   (assoc M (clu :name) clu))))
             clus singlets)))
 
+(defn calc-max+
+  "Calculate the max+ for a sequence length comparison from %-max
+  divergence from test sequence. %-max is in open interval (0.0
+  .. 1.0). If %-max >= 0.05, %-max+ computed as divergence from test
+  seq length as percentage:
+
+  (->> %-max (- 1.0) (+ 1.0) double).
+
+  If %-max < 0.05, switch to multiples of test sequence length:
+
+  (->> %-max (/ 1.0) double)"
+  [%-max]
+  (if (< %-max 0.05) ; hackish way to switch divergence
+    (->> %-max (/ 1.0) double)
+    (->> %-max (- 1.0) (+ 1.0) double)))
+
 (defn init-centers
   ""
   [dists & {:keys [%-max clus] :or {%-max 0.4}}]
   (let [ndists (gen-nm-dists-map dists)
-        %-max+ (->> %-max (- 1.0) (+ 1.0) double)]
+        %-max+ (calc-max+ %-max)]
     (loop [ndists ndists
            clus (or clus {})]
       #_(println (format "cnt ndists: %s; cnt clus %s"
@@ -424,9 +454,7 @@
         (let [[nm pcnt P :as pt] (-> ndists first second)
               len-distmap (gen-len-dists-map
                            (->> clus vals (mapv #(% :center))))
-              ds (->> (range (-> pcnt (* %-max) Math/round)
-                             (-> pcnt (* %-max+) Math/round))
-                      (mapcat len-distmap))
+              ds (candidate-centers len-distmap pcnt %-max %-max+)
               best (best-center ds P)
               clu (if (and best (<= (second best) 0.2))
                     (add-member clus best pt)
@@ -465,7 +493,7 @@
    & {:keys [%-max jsdctpt pgsp-start]
       :or {%-max 0.80 jsdctpt 0.40 pgsp-start @PGSP-index}}]
 
-  (let [%-max+ (->> %-max (- 1.0) (+ 1.0) double)
+  (let [%-max+ (calc-max+ %-max)
         dists (->> dists (apply concat))
         clus (init-clusters start-clusters pgsp-start)
         center-dists (mapv #(% :center) (vals clus))
@@ -480,12 +508,12 @@
               ;; Adjust clus distribution set to use, for current
               ;; dists point, by length - Only for optimization - not
               ;; actually needed for RE
-              ds (->> (range (-> pcnt (* %-max) Math/round)
-                             (-> pcnt (* %-max+) Math/round))
-                      (mapcat len-distmap))
+              ds (candidate-centers len-distmap pcnt %-max %-max+)
+
               ;; Gen scores of current dists point to centers in 'ds'
               ;; set. Pick center with lowest score.
               best-center (best-center ds P)
+
               ;; If best-center score <= jsdctpt, add current point to
               ;; the cluster for this center
               clu (when (and best-center (<= (second best-center) jsdctpt))
@@ -539,7 +567,9 @@
       (let [hybrids (make-hybrids clusters)
             leftovers (leftovers-from-clustering clusters all-dists)
             cur-leftcnt (count leftovers)
-            nextclus (cluster-strains [leftovers] hybrids)]
+            nextclus (cluster-strains
+                      [leftovers] hybrids
+                       :%-max %-max :jsdctpt jsdctpt)]
         (println :diff (- leftcnt cur-leftcnt))
         (if (<= (- leftcnt cur-leftcnt) diffcut)
           nextclus
@@ -591,6 +621,12 @@
                           :%-max %-max :jsdctpt jsdctpt)))))
 
 
+(defn write-cluster [clus name]
+  (io/with-out-writer
+    (-> (pams/get-params :panclus-base) (fs/join "Data" name))
+    (prn clus))
+  clus)
+
 (defn final-pass
   "At the end of a strain clustering, this is a final pass over the
   current results, as embodied in 'clustering', to attempt singlet
@@ -599,33 +635,39 @@
   centers with up to a 40% length difference and jsdctpt of 0.4,
   irrespective of the original values given for the strain
   clustering."
-  [clustering]
+  [clustering %-max filename]
   (let [singlet-dists (clustering->singlet-dists clustering)
         start-centers (clustering-minus-singlets clustering)
         pgsp-num (->> clustering keys sort last
                       (str/split #"_") second Integer.)
         newclus (run-clustering-cycle
                  [singlet-dists] start-centers
+                 :%-max %-max :jsdctpt 0.4
                  :pgsp-start pgsp-num)]
-    (merge-clusters
-     newclus
-     (cluster-leftovers (leftovers-from-clustering newclus singlet-dists)))))
+    (write-cluster
+     (merge-clusters
+      newclus
+      (cluster-leftovers
+       (leftovers-from-clustering newclus singlet-dists) :%-max %-max))
+     filename)))
 
 
 (defn run-strain-clustering
   ""
   [strain-fnas centers-start
-   & {:keys [%-max jsdctpt diffcut chunk-size pgsp-start]
-      :or {%-max 0.8 jsdctpt 0.40 diffcut 0 chunk-size 10}}]
+   & {:keys [%-max final-%-max jsdctpt diffcut chunk-size pgsp-start]
+      :or {%-max 0.8 final-%-max 0.1 jsdctpt 0.40 diffcut 0 chunk-size 10}}]
   (println :let)
   (let [alpha :aa
         ows (ows alpha)]
     (println :at-loop)
     (loop [pgsp-num pgsp-start
            strain-fnas strain-fnas
+           names (cycle ["snapshot-clus-1.clj"
+                         "snapshot-clus-2.clj"])
            clusters centers-start]
       (if (empty? strain-fnas)
-        (final-pass clusters)
+        (final-pass clusters final-%-max "final-snapshot-clus.clj")
         (let [chunk-fnas (take chunk-size strain-fnas)
               _ (println :fnas)
               chunk-dists (gen-strain-group-dists chunk-fnas :ows ows)
@@ -639,161 +681,57 @@
               leftover-clus (cluster-leftovers
                              (leftovers-from-clustering
                               chunk-clusters (apply concat chunk-dists))
-                             :%-max %-max :jsdctpt jsdctpt)]
+                             :%-max %-max :jsdctpt jsdctpt)
+              new-clus (merge-clusters chunk-clusters leftover-clus)]
+
+          ;; Snapshot current results - fail over and other fuckups
+          (write-cluster new-clus (first names))
+
           (println "At recur point")
           (recur @PGSP-index
                  (drop chunk-size strain-fnas)
-                 (merge-clusters chunk-clusters leftover-clus)))))))
+                 (rest names)
+                 new-clus))))))
 
 
-(defn pair-jsd [x y & {:keys [aa] :or {aa true}}]
-  (let [xdist (get-dist x :aa aa)
-        ydist (get-dist y :aa aa)]
-    (it/jensen-shannon xdist ydist)))
-
-
-
-
-(defn center-dist->pair-map
-  [center-dist jsdct & {:keys [dir] :or {dir :below}}]
-  (let [func (if (= dir :below) coll/take-until coll/drop-until)]
-    (->> center-dist
-         (sort-by first)
-         (func #(-> % first (> jsdct)))
-         (reduce (fn[M [scr pairs]]
-                   (loop [M M
-                          pairs pairs]
-                     (if (empty? pairs)
-                       M
-                       (let [[pg1 pg2] (first pairs)]
-                         (recur (assoc M
-                                       pg1 (conj (M pg1 []) pg2)
-                                       pg2 (conj (M pg2 []) pg1))
-                                (rest pairs))))))
-                 {}))))
-
-(defn next-set
-  "Transitive merge set computation. 'curset' is the current total set
-  of related clusters to merge, 'pair-map' is the current map of
-  leftover possible clusters to add in, 'mems' is the current
-  transitive elements to be checked. Returns [curset curmap], where
-  curset here is the new set of mergeable clusters (may be the same as
-  input curset), curmap is the current version of pair-map with any
-  newly added cluster keys removed."
-  [curset pair-map mems]
-  (loop [mems mems
-         curset curset
-         curmap pair-map]
-    (if (empty? mems)
-      [curset curmap]
-      (let [pgk (first mems)
-            newmems (curmap pgk)
-            nxtmap (dissoc curmap pgk)
-            [newset newmap] (next-set (conj curset pgk) nxtmap newmems)]
-        (recur (rest mems) newset newmap)))))
-
-(defn next-id
-  "Generate a new clu-id for merged cluster set"
-  []
-  (format "PGSP_%05d" (swap! PGSP-index inc)))
-
-(defn tran-reduce
-  "Driver for generating the set of mergable clusters from an
-  originating 'pair-map'. 'pair-map' is the map of all pairwise
-  clusters satisfying a maximal center-center JSD cutoff. 'pgsp-start'
-  is an integer to start generating new cluster ids for the mergable
-  cluster sets. Generally it will be the value of PGSP-index after the
-  clustering being used to generate merge sets."
-  [pair-map pgsp-start]
-  (swap! PGSP-index (constantly pgsp-start))
-  (reduce (fn[[M newmap] pgk]
-            (if (not (newmap pgk))
-              [M newmap]
-              (let [[cluset newmap] (next-set #{} newmap [pgk])
-                    clu-id (next-id)]
-                [(assoc M clu-id cluset) newmap])))
-          [{} pair-map] (keys pair-map)))
-
-
-(defn merged-set->cluster
-  [merged-set clustering & {:keys [ows] :or {ows 6}}]
-  (let [[pgnm pgids] merged-set
-        mems (->> pgids
-                  (mapv #(->> (clustering %) :members))
-                  (apply set/union))
-
-        oldoutjsds (->> pgids
-                     (mapv #(->> (clustering %) :outjsds))
-                     (apply coll/concatv))
-        oldjsds (->> pgids
-                     (mapv #(->> (clustering %) :jsds))
-                     (mapv #(sort-by second %)))
-        bestjsds (mapv first oldjsds)
-        bestdists (mapv #(-> % first member->dist) bestjsds)
-        centroid (it/hybrid-dictionary ows bestdists)
-
-        mdc-trips (mapv #(let [ent (member->entry %)
-                               [dist cnt] (get-dist-cnt %)]
-                           [% dist cnt])
-                        mems)
-        jsds (->> mdc-trips
-                  (mapv (fn[[mem P _]]
-                          [mem (roundit (it/jensen-shannon P centroid))]))
-                  (sort-by second))
-        outjsds (coll/drop-until #(-> % second (>= 0.31)) jsds)
-        jsds (take-while #(-> % second (< 0.31)) jsds)
-        gdmems (->> jsds (mapv first) (into #{}))
-        mdc-trips (filter #(-> % first gdmems) mdc-trips)
-
-        cnt (->> mdc-trips (mapv last) p/mean)
-        Q (->> mdc-trips (mapv second) (it/hybrid-dictionary ows))
-
-        jsds (mapv (fn[[mem P _]] [mem (roundit (it/jensen-shannon P Q))])
-                   mdc-trips)]
-
-    {:center [pgnm cnt Q]
-     :dists [Q]
-     :jsds jsds
-     :outjsds (coll/concatv outjsds oldoutjsds)
-     :cnt {:sm cnt, :d 1, :m cnt}
-     :members gdmems
-     :name pgnm}))
-
-(defn merged-sets->clusters
-  [merged-sets clustering]
-  (->> merged-sets
-       (vfold (fn[ms]
-                (let [clu (merged-set->cluster ms clustering)]
-                  [(clu :name) clu])))
+(defn min2full-clustering
+  [min-clustering mem-ident-map]
+  (->> min-clustering
+       (map (fn[[nm m]]
+              (let [mems (m :members)
+                    fullmems (->> mems
+                                  (mapcat #(mem-ident-map %))
+                                  (into #{})
+                                  (set/union mems))
+                    jsds (m :jsds)
+                    fulljsds (->> jsds
+                                  (mapcat (fn[[nm jsd]]
+                                            (->> nm
+                                                 mem-ident-map
+                                                 (#(conj % nm)) set
+                                                 (map #(vector % jsd)))))
+                                  vec)
+                    newm (assoc m :members fullmems
+                                  :jsds fulljsds)]
+                [nm newm])))
        (into {})))
 
-
-(def DBG (atom {}))
-
-(defn cur->next-merged-clusters
-  [cur-clusters pgsp-start pair-map]
-  (let [next-merged-sets (-> pair-map
-                             (tran-reduce pgsp-start) first)
-        next-merged-clusters (merged-sets->clusters
-                              next-merged-sets cur-clusters)]
-    (swap! DBG (fn[m] (assoc m :next-merged-sets next-merged-sets
-                              :next-merged-clusters next-merged-clusters)))
-    next-merged-clusters))
-
-(defn cur->next-clustering
-  [cur-clusters pair-map next-merged-clusters]
-  (let [cur-clus-minus (->> pair-map keys (apply dissoc cur-clusters))
-        cur-merged-clus (merge cur-clus-minus next-merged-clusters)]
-    (swap! DBG
-           (fn[m] (assoc m :current-clustering-minus cur-clus-minus
-                          :current-merged-clustering cur-merged-clus)))
-    cur-merged-clus))
 
 
 (defn next-point-dist [clusters mode]
   (if (= mode :center-center)
     (-> clusters first last)
     (assert :NYI "only :center-center supported at this point")))
+
+(defn get-comp-pairs [dists Pnm P]
+  (->> dists
+       (vfold (fn[[nm Q]]
+                [(roundit (it/jensen-shannon P Q) :places 2) [Pnm nm]]))))
+
+(defn new-comp-dist [comp-dist comp-pairs]
+  (reduce (fn[CD [scr pair]]
+            (assoc CD scr (conj (get CD scr []) pair)))
+          comp-dist comp-pairs))
 
 (defn compare-clusters [clusters & {:keys [mode] :or {mode :center-center}}]
   (loop [comp-dist {}
@@ -802,42 +740,31 @@
       comp-dist
       (let [P (next-point-dist clusters mode)
             Pnm (-> clusters first first)
-            dists (rest clusters)
-            [Qnm score] (->> dists
-                             (vfold (fn[[nm Q]]
-                                      [nm (roundit (it/jensen-shannon P Q))]))
-                             (sort-by second) first)]
+            dists (rest clusters)]
         (println (format "(count clusters): %s" (count clusters)))
-        (recur (assoc comp-dist score
-                      (conj (get comp-dist score []) [Pnm Qnm]))
+        (recur (new-comp-dist comp-dist (get-comp-pairs dists Pnm P))
                (rest clusters))))))
 
-(defn center-distances
-  [cur-clusters next-merged-clusters cur-center-distances jsdct]
-  (let [center-jsd-dist cur-center-distances
-        new-keys (-> next-merged-clusters keys set)
-        cur-keys (-> cur-clusters keys set)]
-    (->> center-jsd-dist (sort-by first)
-         (coll/drop-until #(-> % first (> jsdct)))
-         (mapcat (fn[[scr members]] (mapcat identity members)))
-         (into #{})
-         (set/difference cur-keys)
-         (mapv #(vector % (cur-clusters %)))
-         (into {})
-         vals
-         compare-clusters)))
 
 
-(defn cur-members-from-distances
-  [cur-center-distances pair-map jsdct]
-  (let [above-jsdct (->> cur-center-distances
-                         (sort-by first)
-                         (coll/drop-until #(-> % first (> jsdct)))
-                         (mapcat (fn[[scr members]] (mapcat identity members)))
-                         (into #{})
-                         (set/intersection (-> pair-map keys set))
-                         (mapcat #(conj (pair-map %) %))
-                         (into #{}))]))
+(defn next-pass-data-sets
+  [clustering center-jsd-dist jsdctpt]
+  (let [cluids (->>  center-jsd-dist
+                     (sort-by first)
+                     (coll/take-until #(-> % first (> jsdctpt)))
+                     (mapcat (fn[[_ pairs]]
+                               (mapcat (fn[pair]
+                                         (let [clus (mapv #(clustering %) pair)
+                                               nms (mapv #(% :name) clus)]
+                                           nms))
+                                       pairs)))
+                     (into #{}))
+        mems (mapcat #(-> % clustering :members) cluids)
+        clustering-minus (apply dissoc clustering cluids)]
+    [mems clustering-minus cluids]))
+
+
+
 
 (comment
 
@@ -853,28 +780,48 @@
       (fs/join "Data/tigr4-centers.clj")
       slurp read-string))
 
-
-
 (swap! PGSP-index
        (fn[& args]
          (->> tigr4-centers
               keys sort last (str/split #"_") second Integer.)))
 
+
+(def species-clusters
+  (future (binding [ows {:nt 9 :aa 5}]
+            (run-strain-clustering
+             (->> species-fnas rest (take 1))
+             (init-clusters (-> reffnas first
+                                (gen-strain-dists :ows (ows :aa))) 0)
+             :pgsp-start @PGSP-index :jsdctpt 0.37 :%-max 0.2
+             :chunk-size 2 :diffcut 0))))
+
+
+
+
 (def ref77-SP-clusters
   (future (run-strain-clustering
-           (rest reffnas)
+           #_(rest reffnas)
+           (->> r77-ident-map keys (partition-all 4000))
            tigr4-centers
-           :pgsp-start @PGSP-index :jsdctpt 0.4 :%-max 0.80
+           :pgsp-start @PGSP-index :jsdctpt 0.3 :%-max 0.3
            :chunk-size 2 :diffcut 0)))
 
 (def ref77-SP-clusters @ref77-SP-clusters)
 
+
 (io/with-out-writer "/store/data/PanClus/Data/ref77-SP-clusters.clj"
   (prn ref77-SP-clusters))
+(io/with-out-writer "/store/data/PanClus/Data/ref77-SP-clusters-done.clj"
+  (prn ref77-full-clusters))
+
 
 (def ref77-SP-clusters
   (-> (pams/get-params :panclus-base)
-      (fs/join "Entropy/ref77-SP-clusters.clj")
+      (fs/join "Data/ref77-SP-clusters.clj")
+      slurp read-string))
+(def ref77-SP-clusters
+  (-> (pams/get-params :panclus-base)
+      (fs/join "Data/EqRes/ref77-SP-clusters-new2.clj")
       slurp read-string))
 
 (swap! PGSP-index
@@ -884,17 +831,21 @@
 
 
 
+
 (def ref77+PG30-SP-clusters
   (future (run-strain-clustering
-           (pgfnas :pg30)
+           #_(pgfnas :pg30)
+           (->> pg30-ident-map keys (partition-all 4000))
            ref77-SP-clusters
-           :pgsp-start @PGSP-index :jsdctpt 0.4 :%-max 0.80
+           :pgsp-start @PGSP-index :jsdctpt 0.3 :%-max 0.3
            :chunk-size 2 :diffcut 0)))
 
 (def ref77+PG30-SP-clusters @ref77+PG30-SP-clusters)
 
-(io/with-out-writer "/store/data/PanClus/Data/ref77+PG30-SP-clusters.clj"
+(io/with-out-writer "/store/data/PanClus/Data/EqRes/ref77+PG30-SP-clusters.clj"
   (prn ref77+PG30-SP-clusters))
+(io/with-out-writer "/store/data/PanClus/Data/ref77+PG30-SP-clusters-done.clj"
+  (prn ref77+pg30-full-clusters))
 
 (def ref77+PG30-SP-clusters
   (-> (pams/get-params :panclus-base)
@@ -909,15 +860,16 @@
 
 
 
-(def ref77pg350-fut
+(def ref77pg350-SP-clusters
   (future (run-strain-clustering
-           (pgfnas :pg320)
+           #_(pgfnas :pg320)
+           (->> pg320-ident-map keys (partition-all 4000))
            ref77+PG30-SP-clusters
-           :pgsp-start @PGSP-index :jsdctpt 0.4 :%-max 0.4
+           :pgsp-start @PGSP-index :jsdctpt 0.3 :%-max 0.3
            :chunk-size 2 :diffcut 0)))
 
 (io/with-out-writer "/store/data/PanClus/Data/ref77+PG350-SP-clusters.clj"
-  (prn @ref77pg350-fut))
+  (prn ref77pg350-SP-clusters))
 
 (def ref77pg350-fut
   (future
@@ -929,42 +881,6 @@
        (fn[& args]
          (->> @ref77pg350-fut
               keys sort last (str/split #"_") second Integer.)))
-
-
-
-
-;;; full ref77pg350 merged clusters
-(def merged-clusters
-  (merged-sets->clusters merged-sets))
-
-(io/with-out-writer
-  "/store/data/PanClus/Entropy/full-r77pg350-merged-clusters.clj"
-  (prn merged-clusters))
-
-(def merged-clusters
-  (-> (pams/get-params :panclus-base)
-      (fs/join "Entropy/full-r77pg350-merged-clusters.clj")
-      slurp read-string))
-
-
-;;; ref77pg350 minus all input clusters to merge plus new merged clusters
-(def ref77pg350-minus
-  (->> testmap keys (apply dissoc @ref77pg350-fut) count))
-
-(def ref77-pg350-with-merged-clusters
-  (merge ref77pg350-minus merged-clusters))
-
-(io/with-out-writer
-  "/store/data/PanClus/Entropy/ref77-pg350-with-merged-clusters.clj"
-  (prn ref77-pg350-with-merged-clusters))
-
-(def ref77-pg350-with-merged-clusters
-  (-> (pams/get-params :panclus-base)
-      (fs/join "Entropy/ref77-pg350-with-merged-clusters.clj")
-      slurp read-string))
-
-(->> ref77-pg350-with-merged-clusters
-     keys sort last (str/split #"_") second Integer.)
 
 
 
