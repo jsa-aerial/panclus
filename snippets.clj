@@ -11,62 +11,33 @@
             (vfold #(vector % (-> % member->sq count)))
             (into {}))))
 
+(->>
+ (letio [fa (->> _19F-22F-fnas second)
+         infa (io/open-file fa :in)]
+   (loop [farec (bufiles/read-farec infa)
+          pairs []]
+     (if (-> farec first not)
+       pairs
+       (let [[id sq] farec
+             cnt (count sq)
+             bits (str/split #"," id)
+             ent (str/substring (first bits) 1)
+             ltag (->> bits (coll/drop-until #(= % "locus_tag")) rest first)]
+         (recur
+          (bufiles/read-farec infa)
+          (conj pairs [(str ent "," ltag) cnt]))))))
+ (into {})
+ (merge ident-map))
 
 
 
-(def ref77pg350-clus2rm #_ref77pg30-clus2rm #_ref77clus2rm
-  (->>  #_ref77-center-jsd-dist
-        #_panclus.stats/ref77-center-jsd-dist-new
-        #_ref77+pg30-center-jsd-dist
-        #_ref77+pg30-center-jsd-dist-new
-        ref77+pg350-center-jsd-dist
-        (sort-by first)
-        (coll/take-until #(-> % first (> 0.3)))
-        (mapv (fn[[scr pairs]]
-                (let [clustering
-                      #_ref77-SP-clusters
-                      #_ref77-SP-clusters-new
-                      #_ref77+PG30-SP-clusters
-                      #_ref77+PG30-SP-clusters-new
-                      ref77pg350-SP-clusters
-                      ]
-                  [scr (mapv
-                        (fn[pair]
-                          (let [clus (mapv #(clustering %) pair)
-                                nms (mapv #(% :name) clus)
-                                mems (mapv #(% :members)
-                                           clus)
-                                memcnt (mapv count mems)
-                                lens (->> clus
-                                          (mapv #(-> % :center second
-                                                     (roundit :places 1)))
-                                          sort)]
-                            {:nms nms
-                             :mcnt memcnt :smcnt (m/sum memcnt)
-                             :lens lens
-                             :lenratio (-> (apply / lens) double
-                                           (roundit :places 2))
-                             :mems mems}))
-                        pairs)])))
-        (mapcat (fn[[scr pairs]]
-                  (mapcat (fn[m] (m :nms))
-                          pairs)))
-        (into #{})))
-
-(map count [ref77-SP-clusters-new ref77-SP-clusters-minus
-            ref77clus2rm ref77clus2rm-mems])
-
-(def ref77clus2rm-mems
-  (mapcat #(-> % ref77-SP-clusters-new :members) ref77clus2rm))
-(def ref77-SP-clusters-minus
-  (apply dissoc ref77-SP-clusters-new ref77clus2rm))
-
+;;; R77 only
 (let [[mems clu-minus cluids] (next-pass-data-sets
-                               ref77-SP-clusters 
+                               ref77-SP-clusters
                                ref77-center-jsd-dist 0.3)]
   (def ref77-SP-clusters-new
     (future (run-strain-clustering
-             [mems]
+             (partition-all 2000 mems)
              clu-minus
              :pgsp-start @PGSP-index :jsdctpt 0.3
              :%-max 0.05 :final-%-max 0.02
@@ -74,21 +45,19 @@
 
 
 
-(map count [ref77+PG30-SP-clusters  ref77+PG30-SP-clusters-minus
-            ref77pg30-clus2rm ref77pg30-clus2rm-mems])
 
-(def ref77pg30-clus2rm-mems
-  (mapcat #(-> % ref77+PG30-SP-clusters-new :members) ref77pg30-clus2rm))
-(def ref77+PG30-SP-clusters-minus
-  (apply dissoc ref77+PG30-SP-clusters-new ref77pg30-clus2rm))
-(def ref77+PG30-SP-clusters-new
-  (future (run-strain-clustering
-           [ref77pg30-clus2rm-mems]
-           ref77+PG30-SP-clusters-minus
-           :pgsp-start @PGSP-index :jsdctpt 0.3
-           ;; Note that for first run 0.02 for %-max
-           :%-max 0.4 :final-%-max 0.02
-           :chunk-size 2 :diffcut 0)))
+;;; R77+PG30
+(let [[mems clu-minus cluids] (next-pass-data-sets
+                               ref77+PG30-SP-clusters
+                               ref77+pg30-center-jsd-dist 0.3)]
+  (def ref77+PG30-SP-clusters-new
+    (future (run-strain-clustering
+             (partition-all 2000 mems)
+             clu-minus
+             :pgsp-start @PGSP-index :jsdctpt 0.3
+             ;; Note that for first run 0.02 for %-max
+             :%-max 0.4 :final-%-max 0.02
+             :chunk-size 2 :diffcut 0))))
 
 (io/with-out-writer "/store/data/PanClus/Data/ref77+PG30-SP-clusters-2.clj"
   (prn ref77+PG30-SP-clusters-new))
@@ -106,12 +75,61 @@
   (prn (->> ref77+pg30-center-jsd-dist-new (sort-by first)
             (mapv (fn[[jsd members]] {:jsd jsd :cnt (count members)})))))
 
-;;; pairwise size for %-max on new runs
-(->> "PGSP_02179" ref77+PG30-SP-clusters-new
-     :members
-     (mapv #(vector % (-> % member->sq count)))
-     (sort-by second)
-     clojure.pprint/pprint)
+
+
+
+;;; R77+PG350
+(let [[mems clu-minus cluids] (next-pass-data-sets
+                               ref77pg350-SP-clusters
+                               ref77+pg350-center-jsd-dist 0.3)]
+  (def ref77pg350-SP-clusters-new
+    (future (run-strain-clustering
+             (partition-all 2000 mems)
+             clu-minus
+             :pgsp-start @PGSP-index :jsdctpt 0.3
+             ;; Note that for first run 0.02 for %-max
+             :%-max 0.4 :final-%-max 0.1
+             :chunk-size 2 :diffcut 0))))
+
+(io/with-out-writer "/store/data/PanClus/Data/ref77+PG350-SP-clusters-2.clj"
+  (prn ref77+PG350-SP-clusters-new))
+
+(def ref77+pg350-center-jsd-dist-new
+  (future (->> ref77pg350-SP-clusters-new
+               #_(filter (fn[[k m]] (-> m :members count (> 1))))
+               vals
+               compare-clusters)))
+
+(let [[mems clu-minus cluids] (next-pass-data-sets
+                               ref77pg350-SP-clusters-new
+                               ref77+pg350-center-jsd-dist-new 0.33)
+      mems (->> mems (group-by member->strain)
+                (sort-by #(-> % second count) >)
+                (mapcat second))]
+  (def ref77pg350-SP-clusters-new
+    (future (run-strain-clustering
+             (partition-all 2000 mems)
+             clu-minus
+             :pgsp-start @PGSP-index :jsdctpt 0.3
+             ;;:%-max 0.4 :final-%-max 0.1
+             :%-max 0.1 :final-%-max 0.05
+             :chunk-size 2 :diffcut 0))))
+
+
+
+
+;;; Counting stuff
+(->> ref77pg350-SP-clusters
+     (#(min2full-clustering
+        % (merge r77-ident-map pg30-ident-map pg320-ident-map)))
+     vals (filter #(-> % :members count (= 1)))
+     (mapcat #(-> % :members))
+     (group-by member->strain)
+     (sort-by (fn[[st mems]] (count mems)) >)
+     (mapv (fn[[st mems]] [st (count mems)])))
+
+
+
 
 
 
