@@ -2,10 +2,54 @@
 ;;; Pair down # seqs to compare...
 
 
-(def len-map
-  (-> (pams/get-params :panclus-base)
+(def len-map (len-map-data))
+  #_(-> (pams/get-params :panclus-base)
       (fs/join "Data/all-strain-gene-aa-lens.clj")
-      slurp read-string))
+      slurp read-string)
+
+
+(def _19F-22F-mems
+  (->> _19F-22F-fnas
+       (vfold #(bufiles/read-seqs % :info :name))
+       (apply concat)
+       (map (fn[n]
+              (let [[ent & x] (->> n (str/split #","))
+                    lt (->> x (coll/partitionv-all 2) (into {})
+                            (#(% "locus_tag")))]
+                (str ent "," lt))))))
+
+(def _19F-22F-ident-map
+  (let [len-map (merge len-map jsa)
+        m (->> _19F-22F-mems
+               (mapv #(vector % (len-map %)))
+               (group-by second)
+               (map (fn[[k mems]] [k (mapv first mems)])))]
+    (->>
+     (mapcat
+      (fn[[cnt mems]]
+        (loop [mems (->> mems (vfold #(vector % (member->sq %))) (into {}))
+               grps []]
+          (println (count mems) (map #(-> % second count) grps))
+          (if (= (count mems) 0)
+            grps
+            (let [xnm (-> mems first first)
+                  x (-> mems first second
+                        #_(#(do (println :mem (first mems) :cnt (count %)) %))
+                        (str/substring 2 -2))
+                  ys (rest mems)
+                  res (->> ys
+                           (vfold (fn[[nm y]] [nm (->> y (str/substring? x))]))
+                           (group-by second)
+                           (map (fn[[k mems]] [k (mapv first mems)]))
+                           (into {}) (#(% true)))
+                  cnt (count res)]
+              (if (> cnt 0)
+                (recur (apply dissoc mems (conj res xnm))
+                       (conj grps [xnm res]))
+                (recur (dissoc mems xnm)
+                       (conj grps [xnm [xnm]])))))))
+      m)
+     (into {}))))
 
 
 (def r77mems
